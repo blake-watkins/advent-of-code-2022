@@ -1,18 +1,15 @@
 (in-package :aoc-2022)
 
 (defun parse-elf ()
-  (with-monad
-    (assign calories (parse-list (parse-number) (parse-newline)))
-    (unit (reduce #'+ calories))))
+  (parse-list (parse-number) (parse-newline)))
 
 (defun parse-elves ()
   (parse-list (parse-elf) (n-of 2 (parse-newline))))
 
 (defun day1 (input &key (part 1))
-  (let ((parsed (sort (run-parser (parse-elves) input) #'>)))
+  (let* ((parsed (run-parser (parse-elves) input))
+	 (calories (mapcar (lambda (foods) (reduce #'+ foods)) parsed))
+	 (sorted (sort calories #'>)))
     (if (= part 1)
-	(apply #'max parsed)
-	(iter
-	  (repeat 3)
-	  (for elf in parsed)
-	  (summing elf)))))
+	(first sorted)
+	(reduce #'+ (subseq sorted 0 3)))))
