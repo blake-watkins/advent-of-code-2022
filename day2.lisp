@@ -7,9 +7,14 @@
   (parse-lines (parse-game)))
 
 ;; convert the parsed list into appropriate symbols
-(defun convert (parsed)
+(defun convert (parsed &key (part 1))
   (mapcar (lambda (c)
-            (ecase c ((:A :X) :rock) ((:B :Y) :paper) ((:C :Z) :sizzors)))
+            (if (eq part 1)
+                (ecase c
+                  ((:A :X) :rock) ((:B :Y) :paper) ((:C :Z) :sizzors))
+                (ecase c
+                  (:A :rock) (:B :paper) (:C :sizzors)
+                  (:X :lose) (:Y :draw) (:Z :win))))
           parsed))
 
 (defparameter *beats*
@@ -31,14 +36,6 @@
   (+ (ecase my-move (:rock 1) (:paper 2) (:sizzors 3))
      (* 3 (ecase outcome (:lose 0) (:draw 1) (:win 2)))))
 
-;; Convert the parsed list into symbols for part 2
-(defun convert-2 (parsed)
-  (mapcar (lambda (c)
-            (ecase c
-              (:A :rock) (:B :paper) (:C :sizzors)
-              (:X :lose) (:Y :draw) (:Z :win)))
-          parsed))
-
 ;; Given opponent's move and desired outcome, return my move.
 (defun move-for-outcome (move-outcome)
   (destructuring-bind (opponent-move outcome) move-outcome
@@ -48,13 +45,15 @@
       (:lose (losing-move-against opponent-move)))))
 
 (defun day2 (input &key (part 1))
-  (labels ((score-1 (parsed)
-             (let ((moves (convert parsed)))
-               (score (second moves) (outcome moves))))
-           (score-2 (parsed)
-             (let ((move-outcome (convert-2 parsed)))
-               (score (move-for-outcome move-outcome)
-                      (second move-outcome)))))
-    (let ((parsed (run-parser (parse-file) input)))
-      (reduce #'+ (mapcar (if (eq part 1) #'score-1 #'score-2) parsed)))))
+  (labels ((score-1 (moves)
+             (score (second moves) (outcome moves)))
+           (score-2 (move-outcome)
+             (score (move-for-outcome move-outcome)
+                    (second move-outcome))))
+    (let* ((parsed (run-parser (parse-file) input))
+           (converted
+             (mapcar (lambda (p) (convert p :part part)) parsed))
+           (scores
+             (mapcar (if (eq part 1) #'score-1 #'score-2) converted)))
+      (reduce #'+ scores))))
 
