@@ -1,11 +1,7 @@
 (in-package :aoc-2022)
 
 (defun parse-assignment ()
-  (with-monad
-    (assign start (parse-number))
-    (parse-character #\-)
-    (assign end (parse-number))
-    (unit (list start end))))
+  (parse-list (parse-number) (parse-character #\-)))
 
 (defun parse-file ()
   (parse-lines (parse-list (parse-assignment))))
