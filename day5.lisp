@@ -47,9 +47,8 @@
   (let ((crates (subseq (elt stacks from) 0 amount)))
     (setf (elt stacks from) (subseq (elt stacks from) amount))
     (setf (elt stacks to)
-          (concatenate 'list (if reverse
-                                 (reverse crates)
-                                 crates)
+          (concatenate 'list
+                       (if reverse (reverse crates) crates)
                        (elt stacks to))))
   stacks)
 
@@ -58,5 +57,5 @@
     (let ((stacks (get-stacks crates)))
       (iter
         (for (amount from to) in moves)
-        (setf stacks (move amount (1- from) (1- to) stacks :reverse (eq part 1))))
+        (setf stacks (move amount (1- from) (1- to) stacks :reverse (= part 1))))
       stacks)))
