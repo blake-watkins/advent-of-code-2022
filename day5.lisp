@@ -12,11 +12,8 @@
     (n-of 3 (parse-character #\Space))
     (unit :blank)))
 
-(defun parse-line ()
-  (parse-list (either (parse-blank) (parse-crate)) " "))
-
 (defun parse-crates ()
-  (parse-lines (parse-line)))
+  (parse-lines (parse-list (either (parse-blank) (parse-crate)) " ")))
 
 (defun parse-move ()
   (with-monad
@@ -46,23 +43,20 @@
         (push crate (elt ret i))))
     (finally (return ret))))
 
-(defun move (amount from to stacks)
-  (iter
-    (repeat amount)
-    (let ((crate (pop (elt stacks from))))
-      (push crate (elt stacks to)))
-    (finally (return stacks))))
-
-(defun move2 (amount from to stacks)
+(defun move (amount from to stacks &key (reverse nil))
   (let ((crates (subseq (elt stacks from) 0 amount)))
     (setf (elt stacks from) (subseq (elt stacks from) amount))
-    (setf (elt stacks to) (concatenate 'list crates (elt stacks to))))
+    (setf (elt stacks to)
+          (concatenate 'list (if reverse
+                                 (reverse crates)
+                                 crates)
+                       (elt stacks to))))
   stacks)
 
-(defun day5 (input)
-  (let* ((parsed (run-parser (parse-file) input))
-         (stacks (get-stacks (first parsed))))
-    (iter
-      (for (amount from to) in (second parsed))
-      (setf stacks (move2 amount (1- from) (1- to) stacks)))
-    stacks))
+(defun day5 (input &key (part 1))
+  (destructuring-bind (crates moves) (run-parser (parse-file) input)
+    (let ((stacks (get-stacks crates)))
+      (iter
+        (for (amount from to) in moves)
+        (setf stacks (move amount (1- from) (1- to) stacks :reverse (eq part 1))))
+      stacks)))
