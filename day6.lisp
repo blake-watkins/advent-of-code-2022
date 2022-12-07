@@ -8,8 +8,7 @@
         (parsed (run-parser (parse-file) input)))
     (iter
       (for i from 0)
-      (until (and (> i (1- search-length))
-                  (= search-length
-                     (length (remove-duplicates
-                              (subseq parsed (- i search-length) i))))))
-      (finally (return i)))))
+      (until (= search-length
+                (length (remove-duplicates
+                         (subseq parsed i (+ i search-length))))))
+      (finally (return (+  i search-length))))))
