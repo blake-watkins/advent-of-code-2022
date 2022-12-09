@@ -1,15 +1,11 @@
 (in-package :aoc-2022)
 
 (defun parse-crate ()
-  (with-monad
-    (parse-character #\[)
-    (assign crate (parse-alphanumeric))
-    (parse-character #\])
-    (unit (intern (string  crate) :keyword))))
+  (parse-bracketed (parse-alphanumeric) "[]"))
 
 (defun parse-blank ()
   (with-monad
-    (n-of 3 (parse-character #\Space))
+    (n-of 3 (parse-space))
     (unit :blank)))
 
 (defun parse-crates ()
