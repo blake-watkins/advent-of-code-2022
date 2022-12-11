@@ -27,11 +27,11 @@
              (first substituted)
              (third substituted))))
 
-(defun monkey-turn (items operation test throw-to)
+(defun monkey-turn (items operation test throw-to modulus)
   (iter
     (with thrown-items = (make-hash-table))
     (for item in items)
-    (for worry-level = (floor (apply-operation item operation) 3))
+    (for worry-level = (mod (apply-operation item operation) modulus))
     (push worry-level (gethash (if (= 0 (mod worry-level test))
                                    (first throw-to)
                                    (second throw-to))
@@ -43,16 +43,17 @@
   (one-or-more (parse-monkey)))
 
 (defun day11 (input)
-  (let* ((monkeys (run-parser (parse-file) input))
+  (let* ((monkeys (run-parser (parse-file) input))         
          (monkey-items (iter
                          (with ret = (make-hash-table))
                          (for monkey in monkeys)
                          (setf (gethash (first monkey) ret)
                                (second monkey))
                          (finally (return ret))))
-         (monkey-inspections (make-hash-table)))
+         (monkey-inspections (make-hash-table))
+         (modulus (reduce #'* (mapcar #'fourth monkeys))))
     (iter
-      (repeat 20)
+      (repeat 10000)
       (iter
         (for (id _ operation test throw-to) in monkeys)
         (for items = (gethash id monkey-items))
@@ -62,7 +63,8 @@
         (for thrown-items = (monkey-turn items
                                          operation
                                          test
-                                         throw-to))
+                                         throw-to
+                                         modulus))
         (iter
           (for (to-id items) in-hashtable thrown-items)
           (if (null (gethash to-id monkey-items))
