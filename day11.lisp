@@ -44,9 +44,8 @@
       (for target-id = (if (zerop (mod worry-level test-num))
                            (first throw-to)
                            (second throw-to)))
-      (setf (monkey-items (elt monkeys target-id))
-            (append (monkey-items (elt monkeys target-id))
-                    (list worry-level))))
+      (with-slots ((target-items items)) (elt monkeys target-id)
+        (setf target-items (append target-items (list worry-level)))))
     (setf items '())))
 
 (defun monkey-business (monkeys)
