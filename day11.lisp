@@ -3,9 +3,6 @@
 (defstruct monkey
   id items operation test-num throw-to inspections)
 
-(defun parse-operation ()
-  (parse-list (either (parse-number) (parse-keyword)) " "))
-
 (defun parse-monkey ()
   (with-monad
     (parse-string "Monkey ")
@@ -13,7 +10,7 @@
     (parse-until (parse-string "Starting items: "))
     (assign items (parse-list (parse-number) ", "))
     (parse-until (parse-string "Operation: new = "))
-    (assign operation (parse-operation))
+    (assign operation (parse-list (either (parse-number) (parse-keyword)) " "))
     (parse-until (parse-string "Test: divisible by "))
     (assign test-num (parse-number))
     (assign throw-to (n-of 2 (with-monad
@@ -30,8 +27,8 @@
 (defun parse-file ()
   (one-or-more (parse-monkey)))
 
-(defun apply-operation (old operation)
-  (let ((substituted (substitute old :old operation)))
+(defun apply-operation (old-val operation)
+  (let ((substituted (substitute old-val :old operation)))
     (funcall (ecase (second substituted) (:+ #'+) (:* #'*))
              (first substituted)
              (third substituted))))
