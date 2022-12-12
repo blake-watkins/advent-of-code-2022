@@ -1,5 +1,8 @@
 (in-package :aoc-2022)
 
+(defstruct monkey
+  id items operation test-num throw-to inspections)
+
 (defun parse-operation ()
   (parse-list (either (parse-number) (parse-keyword)) " "))
 
@@ -17,59 +20,47 @@
                                (parse-until (parse-string "throw to monkey "))
                                (parse-number))))
     (n-of 2 (parse-newline))
-    (unit (list id items operation test-num throw-to))))
-
-(defun apply-operation (old operation)
-  (let ((substituted (substitute old :old operation)))
-    (funcall (ecase (second substituted)
-               (:+ #'+)
-               (:* #'*))
-             (first substituted)
-             (third substituted))))
-
-(defun monkey-turn (items operation test throw-to modulus)
-  (iter
-    (with thrown-items = (make-hash-table))
-    (for item in items)
-    (for worry-level = (mod (apply-operation item operation) modulus))
-    (push worry-level (gethash (if (= 0 (mod worry-level test))
-                                   (first throw-to)
-                                   (second throw-to))
-                               thrown-items
-                               '()))
-    (finally (return thrown-items))))
+    (unit (make-monkey :id id
+                       :items items
+                       :operation operation
+                       :test-num test-num
+                       :throw-to throw-to
+                       :inspections 0))))
 
 (defun parse-file ()
   (one-or-more (parse-monkey)))
 
-(defun day11 (input)
-  (let* ((monkeys (run-parser (parse-file) input))         
-         (monkey-items (iter
-                         (with ret = (make-hash-table))
-                         (for monkey in monkeys)
-                         (setf (gethash (first monkey) ret)
-                               (second monkey))
-                         (finally (return ret))))
-         (monkey-inspections (make-hash-table))
-         (modulus (reduce #'* (mapcar #'fourth monkeys))))
+(defun apply-operation (old operation)
+  (let ((substituted (substitute old :old operation)))
+    (funcall (ecase (second substituted) (:+ #'+) (:* #'*))
+             (first substituted)
+             (third substituted))))
+
+(defun monkey-turn (monkey monkeys modulus part)
+  (with-slots (items operation test-num throw-to inspections) monkey
     (iter
-      (repeat 10000)
+      (for item in items)
+      (incf inspections)
+      (for worry-level = (mod (floor (apply-operation item operation)
+                                     (if (= part 1) 3 1))
+                              modulus))
+      (for target-id = (if (zerop (mod worry-level test-num))
+                           (first throw-to)
+                           (second throw-to)))
+      (setf (monkey-items (elt monkeys target-id))
+            (append (monkey-items (elt monkeys target-id))
+                    (list worry-level))))
+    (setf items '())))
+
+(defun monkey-business (monkeys)
+  (reduce #'* (subseq (sort (mapcar #'monkey-inspections monkeys) #'>) 0 2)))
+
+(defun day11 (input &key (part 1))
+  (let* ((monkeys (run-parser (parse-file) input))         
+         (modulus (reduce #'* (mapcar #'monkey-test-num monkeys))))
+    (iter
+      (repeat (if (= part 1) 20 10000))
       (iter
-        (for (id _ operation test throw-to) in monkeys)
-        (for items = (gethash id monkey-items))
-
-        (incf (gethash id monkey-inspections 0) (length items))
-
-        (for thrown-items = (monkey-turn items
-                                         operation
-                                         test
-                                         throw-to
-                                         modulus))
-        (iter
-          (for (to-id items) in-hashtable thrown-items)
-          (if (null (gethash to-id monkey-items))
-              (setf (gethash to-id monkey-items) (reverse items))
-              (nconc (gethash to-id monkey-items)
-                     (reverse items))))
-        (setf (gethash id monkey-items) '()))
-      (finally (return monkey-inspections)))))
+        (for monkey in monkeys)
+        (monkey-turn monkey monkeys modulus part))
+      (finally (return (monkey-business monkeys))))))
