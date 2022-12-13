@@ -1,26 +1,18 @@
 (in-package :aoc-2022)
 
 (defun parse-packet ()
-  (with-monad
-    (unit nil)
-    (either (parse-bracketed (parse-list (either (parse-number)
-						 (parse-packet))
-					 ",")
-			     "[]")
-	    (then (parse-string "[]") (unit '())))))
-
-(defun parse-pair ()
-  (n-of 2 (parse-line (parse-packet))))
+  (parse-bracketed
+   (either (parse-list (either (parse-number) (parse-packet)) ",")
+	   (unit '()))
+   "[]"))
 
 (defun parse-file ()
-  (parse-lines (parse-pair)))
+  (parse-lines (n-of 2 (parse-line (parse-packet)))))
 
 (defun compare (a b)
   (cond
     ((and (numberp a) (numberp b))
-     (cond ((< a b) :less)
-	   ((= a b) :equal)
-	   (t :more)))
+     (cond ((< a b) :less) ((= a b) :equal) (t :more)))
     ((and (listp a) (listp b))
      (let ((ret (iter
 		  (for elem-a in a)
