@@ -14,41 +14,36 @@
     ((and (numberp a) (numberp b))
      (cond ((< a b) :less) ((= a b) :equal) (t :more)))
     ((and (listp a) (listp b))
-     (let ((ret (iter
-		  (for elem-a in a)
-		  (for elem-b in b)
-		  (for cmp = (compare elem-a elem-b))
-		  (finding cmp such-that (not (eq :equal cmp))))))
-       (if (or (null ret) (eq :equal ret))
+     (let ((first-different (find-if (lambda (x) (not (eq :equal x)))
+				     (map 'list #'compare a b))))
+       (if first-different
+	   first-different
 	   (cond
 	     ((< (length a) (length b)) :less)
 	     ((= (length a) (length b)) :equal)
-	     (t :more))
-	   ret)))
+	     (t :more)))))
     ((numberp a) (compare (list a) b))
-    (t (compare a (list b)))))
+    ((numberp b) (compare a (list b)))))
 
-(defun day13 (input)
-  (let* ((parsed (run-parser (parse-file) input))
-	 (comparisons (mapcar (lambda (pair) (apply #'compare pair)) parsed)))
-    (iter
-      (for i from 1)
-      (for c in comparisons)
-      (when (eq :less c)
-	(sum i)))))
+(defparameter *divider-packets* '(((2)) ((6))))
 
-(defun day13-2 (input)
-  (let* ((parsed (run-parser (parse-file) input))
-	 (packets (all-packets parsed))
-	 (sorted (sort packets (lambda (a b) (eq :less (compare a b))))))
-    (* (1+ (position '((2)) sorted :test 'equal))
-       (1+ (position '((6)) sorted :test 'equal))
-       )))
+(defun packet< (a b) (eq :less (compare a b)))
+
+(defun index-of (packet packets)
+  (1+ (position packet packets :test 'equal)))
 
 (defun all-packets (parsed)
   (concatenate 'list
-	       '(((2)) ((6)))
-	       (iter
-		 (for pair in parsed)
-		 (collect (first pair))
-		 (collect (second pair)))))
+	       *divider-packets*
+	       (iter (for (a b) in parsed) (collect a) (collect b))))
+
+(defun day13 (input &key (part 1))
+  (let ((parsed (run-parser (parse-file) input)))
+    (if (= part 1)
+	(iter
+	  (for index from 1)
+	  (for (a b) in parsed)
+	  (when (packet< a b) (sum index)))
+	(let ((sorted (sort (all-packets parsed) #'packet<)))
+	  (reduce #'* (mapcar (lambda (packet) (index-of packet sorted))
+			      *divider-packets*))))))
