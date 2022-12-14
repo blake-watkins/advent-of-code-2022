@@ -14,14 +14,14 @@
     ((and (numberp a) (numberp b))
      (cond ((< a b) :less) ((= a b) :equal) (t :more)))
     ((and (listp a) (listp b))
-     (let ((first-different (find-if (lambda (x) (not (eq :equal x)))
-				     (map 'list #'compare a b))))
-       (if first-different
-	   first-different
-	   (cond
-	     ((< (length a) (length b)) :less)
-	     ((= (length a) (length b)) :equal)
-	     (t :more)))))
+     (cond
+       ((and (null a) (null b)) :equal)
+       ((null a) :less)
+       ((null b) :more)
+       (t (let ((cmp (compare (car a) (car b))))
+	    (if (eq cmp :equal)
+		(compare (cdr a) (cdr b))
+		cmp)))))
     ((numberp a) (compare (list a) b))
     ((numberp b) (compare a (list b)))))
 
