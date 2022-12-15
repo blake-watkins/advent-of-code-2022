@@ -33,9 +33,7 @@
   (1+ (position packet packets :test 'equal)))
 
 (defun all-packets (parsed)
-  (concatenate 'list
-	       *divider-packets*
-	       (iter (for (a b) in parsed) (collect a) (collect b))))
+  (append *divider-packets* (iter (for (a b) in parsed) (collect a) (collect b))))
 
 (defun day13 (input &key (part 1))
   (let ((parsed (run-parser (parse-file) input)))
