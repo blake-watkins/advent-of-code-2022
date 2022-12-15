@@ -7,36 +7,33 @@
     (parse-string ", y=")
     (assign y (parse-number))
     (unit (list x y))))
+
 (defun parse-file ()
   (zero-or-more (n-of 2 (parse-until (parse-coordinate)))))
 
-(defun sensor-range (sensor beacon)
-  (manhattan sensor beacon))
-
 (defun covered-interval (sensor beacon row)
+  "Given SENSOR, BEACON as positions, and a ROW number, return interval where there cannot be another beacon, or nil."
   (destructuring-bind (x y) sensor
-    (let ((covered-range (sensor-range sensor beacon))
+    (let ((covered-range (manhattan sensor beacon))
           (diff (abs (- y row))))
       (if (<= diff covered-range)
           (list (+ (- x covered-range) diff)
                 (- (+ x covered-range) diff))
           nil))))
 
-(defun interval-contains (interval value)
-  (<= (first interval) value (second interval)))
-
-(defun intervals-contain (intervals value)
-  (iter
-    (for interval in intervals)
-    (finding interval such-that (interval-contains interval value))))
-
-
-(defun not-present-intervals (parsed row)
+(defun covered-intervals (parsed row)
+  "Return list of all intervals covered by the sensors and beacons in PARSED in the given ROW."
   (iter
       (for (sensor beacon) in parsed)
       (for interval = (covered-interval sensor beacon row))
-      (when interval
-        (collect interval))))
+    (when interval (collect interval))))
+
+(defun intervals-contain (intervals value)
+  "Return an interval containing VALUE if one exists, otherwise NIL."
+  (iter
+    (for interval in intervals)
+    (for (start end) = interval)
+    (finding interval such-that (<= start value end))))
 
 (defun intervals-size (dimensions intervals)
   (destructuring-bind (start end) dimensions
@@ -62,27 +59,12 @@
     (if (null containing)
         x
         (find-uncovered (1+(second containing)) intervals))))
-(defun merge-intervals (i1 i2)
-  (destructuring-bind (s1 e1) i1
-    (destructuring-bind (s2 e2) i2
-      (cond
-        ((<= s1 s2 e2 e1) (list i1))
-        ((<= s2 s1 e1 e2) (list i2))
-        ((<= s1 s2 e1) (list (list s1 (max e1 e2))))
-        ((<= s2 s1 e2) (list (list s2 (max e1 e2))))
-        (t (list i1 i2))))))
 
 (defun day15 (input)
   (let* ((parsed (run-parser (parse-file) input))
          (row 2000000)
-         (intervals (not-present-intervals parsed row))
-         (dim-x (iter
-                  (for sb in parsed)
-                  (for (xs nil) = (first sb))
-                  (for (xb nil) = (second sb))                  
-                  (minimizing (min xs xb) into min-x)
-                  (maximizing (max xs xb) into max-x)
-                  (finally (return (list (- min-x 100000000000) (+ max-x 100000000000))))))
+         (intervals (covered-intervals parsed row))
+         (dim-x (list -100000000000 100000000000))
          (num-included-beacons
            (length (remove-duplicates  (iter
                                          (for sb in parsed)
@@ -91,7 +73,7 @@
                                                     (intervals-contain intervals xb))
                                            (collect (second sb))))
                                        :test 'equal))))
-    (find-uncovered 0 (not-present-intervals parsed 2860779))))
+    (find-uncovered 0 (covered-intervals parsed 2860779))))
     (iter
       (for row below 4000000)
-      (finding row such-that (not (= 4000001 (intervals-size '(0 4000000) (not-present-intervals parsed row))))))
+      (finding row such-that (not (= 4000001 (intervals-size '(0 4000000) (covered-intervals parsed row))))))
