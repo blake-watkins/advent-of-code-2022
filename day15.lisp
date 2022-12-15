@@ -14,11 +14,10 @@
 (defun covered-interval (sensor beacon row)
   "Given SENSOR, BEACON as positions, and a ROW number, return interval where there cannot be another beacon, or NIL."
   (destructuring-bind (x y) sensor
-    (let ((covered-range (manhattan sensor beacon))
-          (diff (abs (- y row))))
-      (when (<= diff covered-range)
-        (list (+ (- x covered-range) diff)
-              (- (+ x covered-range) diff))))))
+    (let* ((covered-range (manhattan sensor beacon))
+           (row-range (- covered-range (abs (- y row)))))
+      (when (>= row-range 0)
+        (list (- x row-range) (+ x row-range))))))
 
 (defun covered-intervals (parsed row)
   "Return list of all intervals covered by the sensors and beacons in PARSED in the given ROW."
