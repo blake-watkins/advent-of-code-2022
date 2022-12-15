@@ -39,35 +39,29 @@
         (collect interval))))
 
 (defun intervals-size (dimensions intervals)
-  (format t "Range ~a~%" dimensions)
   (destructuring-bind (start end) dimensions
     (let ((containing-interval (intervals-contain intervals start)))
       (if containing-interval
           (let ((int-end (second containing-interval)))
             (let ((new-end (min end int-end)))
-              (format t "Found containing interval ~a, new end ~a~%" containing-interval new-end)
               (if (= end new-end)
-                  (progn
-                    (format t "Returning ~a~%" (1+ (- new-end start)))
-                    (1+ (- new-end start)))
-                  (progn
-                    (format t "Adding ~a then calculating from ~a~%"
-                            (1+ (- new-end start)) (list (1+ new-end) end))
-                    (+ (1+ (- new-end start))
-                       (intervals-size (list (1+ new-end) end) intervals))))))
+                  (1+ (- new-end start))
+                  (+ (1+ (- new-end start))
+                     (intervals-size (list (1+ new-end) end) intervals)))))
           (let ((new-int-start
                   (iter
                     (for (x nil) in intervals)
                     (when (> x start)
                       (minimizing x)))))
             (if (and new-int-start (<= new-int-start end))
-                (progn
-                  (format t "Next interval ~a~%" (list new-int-start end))
-                  (intervals-size (list new-int-start end) intervals))
-                (progn
-                  (format t "No next interval~%")
-                  0)))))))
+                (intervals-size (list new-int-start end) intervals)
+                0))))))
 
+(defun find-uncovered (x intervals)
+  (let ((containing (intervals-contain intervals x)))
+    (if (null containing)
+        x
+        (find-uncovered (1+(second containing)) intervals))))
 (defun merge-intervals (i1 i2)
   (destructuring-bind (s1 e1) i1
     (destructuring-bind (s2 e2) i2
@@ -97,6 +91,7 @@
                                                     (intervals-contain intervals xb))
                                            (collect (second sb))))
                                        :test 'equal))))
-    (format t "~a ~a ~a ~a~%" dim-x intervals (intervals-size dim-x intervals)
-            num-included-beacons)
-    (- (intervals-size dim-x intervals) num-included-beacons)))
+    (find-uncovered 0 (not-present-intervals parsed 2860779))))
+    (iter
+      (for row below 4000000)
+      (finding row such-that (not (= 4000001 (intervals-size '(0 4000000) (not-present-intervals parsed row))))))
