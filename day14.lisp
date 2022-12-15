@@ -5,8 +5,8 @@
 
 (defun build-path (start end map)
   (iter
-    (with dir = (mapcar #'signum (map 'list #'- end start)))
-    (for cur initially start then (map 'list #'+ cur dir))
+    (with dir = (point-signum (point- end start)))
+    (for cur initially start then (point+ cur dir))
     (setf (gethash cur map) t)
     (until (equal cur end))
     (finally (return map))))
@@ -21,7 +21,7 @@
 (defun move-sand (sand occupied-fn)
   (let ((falling (iter
                    (for dir in '((0 1) (-1 1) (1 1)))
-                   (for next = (map 'list #'+ sand dir))
+                   (for next = (point+ sand dir))
                    (finding next such-that (not (funcall occupied-fn next))))))
     (if falling
         (list :falling falling)
@@ -53,5 +53,25 @@
       (until (eq :falling status))
       (finally (return num-units)))))
 
-
+;; This version is approx 20x faster for part 2 - just recursively see where the
+;; sand goes. 
+(defun day14-2 (input)
+  (let* ((parsed (run-parser (parse-file) input))
+         (map (build-map parsed))
+         (floor (+ 2 (iter
+                       (for (pos nil) in-hashtable map)
+                       (maximizing (second pos))))))
+    (labels ((occupied (sand)
+               (or (gethash sand map)
+                   (= (second sand) floor)))
+             (count-sand (from)
+               (cond
+                 ((occupied from) 0)
+                 (t
+                  (setf (gethash from map) t)
+                  (1+ (iter
+                        (for dir in '((0 1) (-1 1) (1 1)))
+                        (for next-square = (point+ from dir))
+                        (sum (count-sand next-square))))))))
+      (count-sand '(500 0)))))
 
