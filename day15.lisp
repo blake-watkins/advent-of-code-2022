@@ -32,7 +32,7 @@
   (let ((containing (intervals-contain intervals x)))
     (if (null containing)
         x
-        (find-uncovered (1+ (second containing)) intervals))))
+        (find-uncovered (1+ (interval-end containing)) intervals))))
 
 (defun num-covered-beacons (parsed intervals row)
   "Find the number of beacons in parsed that are covered by INTERVALS in ROW. "
@@ -58,9 +58,3 @@
 	      (finding (list uncovered-pos row)
 		       such-that (<= uncovered-pos search-size)))
 	  (+ (* search-size x) y)))))
-
-
-    
-
-
-    
