@@ -33,7 +33,9 @@
             (setf (gethash (valve-name valve) ret) valve)
             (when (> (valve-flow valve) 0)
               (fset:includef to-open (valve-name valve)))
-            (finally (return ret))))))
+            (finally
+             (set-neighbours ret to-open)
+             (return (list ret to-open)))))))
 
 (defun set-neighbours (valves to-open)
   (iter
@@ -70,12 +72,5 @@
                           valves))))))
 
 (defun day16 (input)
-  (let* ((valves (run-parser (parse-file) input))
-         (to-open (iter
-                    (with ret = (fset:empty-set))
-                    (for (name valve) in-hashtable valves)
-                    (when (> (valve-flow valve) 0)
-                      (fset:includef ret name))
-                    (finally (return ret)))))
-    (set-neighbours valves to-open)
+  (destructuring-bind (valves to-open) (run-parser (parse-file) input)
     (open-valves-2 30 0 :aa to-open valves)))
