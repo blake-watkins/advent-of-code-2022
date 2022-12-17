@@ -7,7 +7,7 @@
   (parse-lines (parse-game)))
 
 ;; convert the parsed list into appropriate symbols
-(defun convert (parsed &key (part 1))
+(defun convert-rps (parsed &key (part 1))
   (mapcar (lambda (c)
             (if (eq part 1)
                 (ecase c
@@ -52,7 +52,7 @@
                     (second move-outcome))))
     (let* ((parsed (run-parser (parse-file) input))
            (converted
-             (mapcar (lambda (p) (convert p :part part)) parsed))
+             (mapcar (lambda (p) (convert-rps p :part part)) parsed))
            (scores
              (mapcar (if (eq part 1) #'score-1 #'score-2) converted)))
       (reduce #'+ scores))))
