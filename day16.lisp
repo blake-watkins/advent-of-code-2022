@@ -55,22 +55,37 @@
           (sort (valve-neighbours valve) #'>
                 :key (lambda (neighbour) (valve-flow (gethash (first neighbour) valves)))))))
 
-(defun open-valves (time-remaining pressure valve to-open valves)
-  (if (or (<= time-remaining 0)
-          (fset:empty? to-open))
-      pressure
-      (iter
-        (for (neighbour distance) in (valve-neighbours (gethash valve valves)))
-        (for neighbour-open-time = (- time-remaining (+ distance 1)))
-        (when (and (fset:contains? to-open neighbour))
-          (maximizing
-           (open-valves-2 neighbour-open-time
-                          (+ pressure (* neighbour-open-time
-                                         (valve-flow (gethash neighbour valves))))
-                          neighbour
-                          (fset:less to-open neighbour)
-                          valves))))))
+(defparameter *cache* (fset:empty-map 0))
+
+(defun open-valves (time-remaining valve to-open valves)
+  (let ((ret 0))
+    (unless (or (<= time-remaining 0)
+                (fset:empty? to-open))
+      (if (fset:domain-contains? *cache* (list time-remaining valve to-open))
+          (setf ret
+                (fset:lookup *cache* (list time-remaining valve to-open)))          
+          (iter
+            (for (neighbour distance) in (valve-neighbours (gethash valve valves)))
+            (for neighbour-open-time = (- time-remaining (+ distance 1)))
+            (when (and (fset:contains? to-open neighbour))
+              (maximizing (+ (* neighbour-open-time
+                                (valve-flow (gethash neighbour valves)))
+                             (open-valves neighbour-open-time
+                                          neighbour
+                                          (fset:less to-open neighbour)
+                                          valves))
+                          into rec))
+            (finally (setf ret rec)))))
+    (setf *cache*
+          (fset:with *cache*
+                     (list time-remaining valve to-open)
+                     (max (fset:lookup *cache* (list time-remaining valve to-open))
+                          ret)))
+    ret))
 
 (defun day16 (input)
   (destructuring-bind (valves to-open) (run-parser (parse-file) input)
-    (open-valves-2 30 0 :aa to-open valves)))
+    (open-valves 30 :aa to-open valves)
+                                        ;   (open-valves 26 0 :aa (fset:set :jj :bb :cc) valves)
+;;    (open-valves 26 0 :aa (fset:set :dd :hh :ee) valves)
+    ))
