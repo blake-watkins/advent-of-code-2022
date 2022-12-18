@@ -21,20 +21,20 @@
   (destructuring-bind (min max) (map-dimensions map)
     (setf min (point- min '(1 1 1)))
     (setf max (point+ max '(1 1 1)))
-    (let ((exterior (make-hash-table :test 'equal)))
-      (labels ((valid-exterior-point (point)
-                 (and (every (lambda (min val max) (<= min val max))
-                             min point max)
-                      (not (gethash point map)))))
-        (iter
-          (for (point) in-bfs-from min             
-               neighbours (lambda (point)
-                            (remove-if-not #'valid-exterior-point
-                                           (neighbours point)))
-               test 'equal
-               single t)
-          (setf (gethash point exterior) t)
-          (finally (return exterior)))))))
+    (labels ((valid-exterior-point (point)
+               (and (every (lambda (min val max) (<= min val max))
+                           min point max)
+                    (not (gethash point map)))))
+      (iter
+        (with exterior = (make-hash-table :test 'equal))
+        (for (point) in-bfs-from min             
+             neighbours (lambda (point)
+                          (remove-if-not #'valid-exterior-point
+                                         (neighbours point)))
+             test 'equal
+             single t)
+        (setf (gethash point exterior) t)
+        (finally (return exterior))))))
 
 (defun day18 (input &key (part 1))
   (let* ((parsed (run-parser (parse-file) input))
