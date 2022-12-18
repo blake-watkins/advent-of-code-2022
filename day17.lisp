@@ -37,7 +37,7 @@
     (maximizing (first abs-stone) into floor)
     (finally (return floor))))
 
-(defparameter *cache* (make-hash-table :test 'equal))
+(defparameter *cache* (fset:empty-map))
 
 (defun print-map (map height)
   (iter
@@ -51,7 +51,8 @@
 (defun day17 (n input)
   (let ((parsed (run-parser (parse-file) input))
         (map (make-hash-table :test 'equal))
-        (highest 0))
+        (highest 0)
+        (heights (fset:empty-seq)))
     (iter outer
       (repeat n)
       (with jet-idx = 0)
@@ -66,8 +67,25 @@
         (setf rock-pos pos)
         (until (eq :intersect-floor state))
         (finally
-         (setf highest (max highest (1+ (update-map rock rock-pos map))))))
-      (finally (return-from outer highest)))))
+         (let* ((new-height (1+ (update-map rock rock-pos map)))
+                (height-diff (- new-height highest)))
+           (setf heights (fset:with-last heights height-diff))
+           (when (> (fset:size heights) 500)
+             (setf heights (fset:less-first heights)))
+           (setf highest (max highest new-height)))))
+ ;     (until (fset:domain-contains? *cache* heights))
+      (setf *cache* (fset:with *cache* heights i))
+      (finally (return-from outer highest
+;                 (list (fset:lookup *cache* heights) i)
+                 )))))
 
 
-
+(defun calc-height (i j input)
+  (destructuring-bind (i-n i-h) i
+    (destructuring-bind (j-n j-h) j
+      (let* ((n 1000000000000)
+             (mod (- j-n i-n))
+             (height-diff (- j-h i-h)))
+        (multiple-value-bind (q r) (floor (- n i-n) mod)
+          (+ (day17 (+ i-n r) input)
+                (* q height-diff)))))))
