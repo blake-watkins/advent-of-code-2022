@@ -1,7 +1,7 @@
 (in-package :aoc-2022)
 
 (defstruct valve
-  name flow next-valves neighbours)
+  name flow next-valves neighbours position)
 
 (defun parse-plural (item)
   (with-monad
@@ -38,9 +38,11 @@
              (return (list ret
                            (make-array (length to-open)
                                        :element-type 'bit
-                                       :initial-element 1)
+                                       :initial-element 0)
                            to-open)))))))
 
+;; Build list of all reachable open valves & their distance
+;; Store position of valve in to-open list
 (defun set-neighbours (valves to-open)
   (iter
     (for (name valve) in-hashtable valves)
@@ -55,24 +57,25 @@
       (when (and (not (eq name neighbour))
                  (member neighbour to-open))
         (push (list neighbour distance) (valve-neighbours valve))))
-    (setf (valve-neighbours valve)
-          (sort (valve-neighbours valve) #'>
-                :key (lambda (neighbour) (valve-flow (gethash (first neighbour) valves)))))))
+    (setf (valve-position valve) (position name to-open))))
 
-(defparameter *cache* nil)
+(defparameter *best-path-for-set* (make-hash-table :test 'equal))
 
-(defun remove-valve (valve-name to-open valve-names)
-  (let ((ret (copy-seq to-open)))
-    (setf (bit ret (position valve-name valve-names)) 0)
+(defun open-valve (valve opened)
+  (let ((ret (copy-seq opened)))
+    (setf (bit ret (valve-position valve)) 1)
     ret))
 
-(defun valves-open (to-open)
-  (every (lambda (x) (= 0 x)) to-open))
+(defun all-valves-open (opened)
+  (every (lambda (x) (= 1 x)) opened))
 
-(defun valve-closed (valve to-open valve-names)
-  (= 1 (bit to-open (position valve valve-names))))
+(defun valve-closed (valve opened)
+  (= 0 (bit opened (valve-position valve))))
 
-(defun list-to-to-open (valves valve-names)
+(defun valve-open (valve opened)
+  (= 1 (bit opened (valve-position valve))))
+
+(defun list-to-opened (valves valve-names)
   (let ((ret (make-array (length valve-names)
                          :element-type 'bit
                          :initial-element 0)))
@@ -81,44 +84,58 @@
       (setf (bit ret (position valve valve-names)) 1)
       (finally (return ret)))))
 
-(defun open-valves (key valves valve-names)
-  (destructuring-bind (time-remaining valve to-open) key
-    (let ((ret 0))
-      (unless (or (<= time-remaining 0) (valves-open to-open))
-        (if (gethash key *cache*)
-            (setf ret (gethash key *cache*))
-            (iter
-              (for (neighbour distance) in
-                   (valve-neighbours (gethash valve valves)))
-              (for neighbour-open-time = (- time-remaining (+ distance 1)))
-              (when (valve-closed neighbour to-open valve-names)
-                (maximizing (+ (* neighbour-open-time
-                                  (valve-flow (gethash neighbour valves)))
-                               (open-valves (list  neighbour-open-time
-                                                   neighbour
-                                                   (remove-valve neighbour
-                                                                 to-open
-                                                                 valve-names))
-                                            valves
-                                            valve-names))
-                            into rec))
-              (finally (setf ret rec)))))
-      (setf (gethash key *cache*) (max (gethash key *cache* 0) ret))
-      ret)))
+(defun opened-to-list (opened valve-names)
+  (iter
+    (for open in-sequence opened)
+    (for name in valve-names)
+    (when (= 1 open) (collect name))))
+
+;; given the time remaining, current valve, current released pressure, which
+;; valves are open (and valve information)
+;; return the most pressure that can be added from this point
+(defun pressure-for-set (time-remaining valve pressure opened valves)
+  (setf (gethash opened *best-path-for-set*)
+        (max (gethash opened *best-path-for-set* 0) pressure))
+  (if (= time-remaining 0)
+      0
+      (let ((best-rec 0))
+        (iter
+          (for (neighbour distance) in (valve-neighbours (gethash valve valves)))
+          (for neighbour-open-time = (- time-remaining (+ distance 1)))
+          (for neighbour-valve = (gethash neighbour valves))
+          (cond
+            ((or (valve-open neighbour-valve opened) (minusp neighbour-open-time))
+             (maximizing 0 into rec))
+            ((valve-closed neighbour-valve opened)  
+             (maximizing
+              (+ (* neighbour-open-time
+                    (valve-flow neighbour-valve))
+                 (pressure-for-set neighbour-open-time
+                                   neighbour
+                                   (+ pressure
+                                      (* neighbour-open-time
+                                         (valve-flow neighbour-valve)))
+                                   (open-valve neighbour-valve opened)
+                                   valves))
+              into rec)))
+          (finally (when rec (setf best-rec rec))))        
+        best-rec)))
 
 (defun day16 (input &key (part 1))
-;  (setf *cache* (make-hash-table :test 'equal))
-  (destructuring-bind (valves to-open valve-names) (run-parser (parse-file) input)
+  (setf *best-path-for-set* (make-hash-table :test 'equal))
+  (destructuring-bind (valves opened valve-names) (run-parser (parse-file) input)
     (if (= part 1)
-        (open-valves (list  30 :aa to-open) valves valve-names)
-        (iter
-          (for count from 1)
-          (when (zerop (mod count 100))
-            (format t "~a ~a~%" count max-score))
-          (for my-valves-list in (combinations valve-names))
-          (for my-valves = (list-to-to-open my-valves-list valve-names))
-          (for elephant-valves = (bit-not my-valves))
-          (for my-score = (open-valves (list 26 :aa my-valves) valves valve-names))
-          (for elephant-score = (open-valves (list 26 :aa elephant-valves) valves valve-names))
-          (maximizing (+ my-score elephant-score) into max-score)
-          (finally (return max-score))))))
+        (pressure-for-set 30 :aa 0 opened valves)
+        (progn
+          (pressure-for-set 26 :aa 0 opened valves)
+          (iter outer
+            (for (my-valves my-score) in-hashtable *best-path-for-set*)
+            (for unopened-valves = (bit-not my-valves))
+            (for unopened-list = (opened-to-list unopened-valves valve-names))
+            (iter
+              (for elephant-list in (combinations unopened-list))
+              (for elephant-valves = (list-to-opened elephant-list valve-names))
+              (for elephant-score =
+                   (gethash elephant-valves *best-path-for-set*))              
+              (when (and (not (null my-score)) (not (null elephant-score)))
+                (in outer (maximizing (+ my-score elephant-score))))))))))
