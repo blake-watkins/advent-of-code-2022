@@ -66,9 +66,6 @@
     (setf (bit ret (valve-position valve)) 1)
     ret))
 
-(defun all-valves-open (opened)
-  (every (lambda (x) (= 1 x)) opened))
-
 (defun valve-closed (valve opened)
   (= 0 (bit opened (valve-position valve))))
 
@@ -108,8 +105,7 @@
              (maximizing 0 into rec))
             ((valve-closed neighbour-valve opened)  
              (maximizing
-              (+ (* neighbour-open-time
-                    (valve-flow neighbour-valve))
+              (+ (* neighbour-open-time (valve-flow neighbour-valve))
                  (pressure-for-set neighbour-open-time
                                    neighbour
                                    (+ pressure
