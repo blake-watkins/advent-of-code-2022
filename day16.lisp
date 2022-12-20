@@ -28,18 +28,14 @@
     (assign valves (parse-lines (parse-valve)))
     (unit (iter
             (with ret = (make-hash-table))
-            (with to-open = '())
+            (with valve-names = '())
             (for valve in valves)
             (setf (gethash (valve-name valve) ret) valve)
             (when (> (valve-flow valve) 0)
-              (push (valve-name valve) to-open))
+              (push (valve-name valve) valve-names))
             (finally
-             (set-neighbours ret to-open)
-             (return (list ret
-                           (make-array (length to-open)
-                                       :element-type 'bit
-                                       :initial-element 0)
-                           to-open)))))))
+             (set-neighbours ret valve-names)
+             (return (list ret (list-to-opened '() valve-names) valve-names)))))))
 
 ;; Build list of all reachable open valves & their distance
 ;; Store position of valve in to-open list
@@ -52,10 +48,8 @@
            in-bfs-from name
            neighbours (lambda (v)
                         (valve-next-valves (gethash v valves)))
-           test 'eq
-           single t)
-      (when (and (not (eq name neighbour))
-                 (member neighbour to-open))
+           test 'eq single t)
+      (when (and (not (eq name neighbour)) (member neighbour to-open))
         (push (list neighbour distance) (valve-neighbours valve))))
     (setf (valve-position valve) (position name to-open))))
 
@@ -95,34 +89,29 @@
         (max (gethash opened *best-path-for-set* 0) pressure))
   (if (= time-remaining 0)
       0
-      (let ((best-rec 0))
-        (iter
-          (for (neighbour distance) in (valve-neighbours (gethash valve valves)))
-          (for neighbour-open-time = (- time-remaining (+ distance 1)))
-          (for neighbour-valve = (gethash neighbour valves))
-          (cond
-            ((or (valve-open neighbour-valve opened) (minusp neighbour-open-time))
-             (maximizing 0 into rec))
-            ((valve-closed neighbour-valve opened)  
-             (maximizing
-              (+ (* neighbour-open-time (valve-flow neighbour-valve))
-                 (pressure-for-set neighbour-open-time
-                                   neighbour
-                                   (+ pressure
-                                      (* neighbour-open-time
-                                         (valve-flow neighbour-valve)))
-                                   (open-valve neighbour-valve opened)
-                                   valves))
-              into rec)))
-          (finally (when rec (setf best-rec rec))))        
-        best-rec)))
+      (or (iter
+            (for (neighbour distance) in (valve-neighbours (gethash valve valves)))
+            (for neighbour-open-time = (- time-remaining (+ distance 1)))
+            (for neighbour-valve = (gethash neighbour valves))
+            (when (and (valve-closed neighbour-valve opened)
+                       (>= neighbour-open-time 0))
+              (maximizing
+               (+ (* neighbour-open-time (valve-flow neighbour-valve))
+                  (pressure-for-set neighbour-open-time
+                                    neighbour
+                                    (+ pressure
+                                       (* neighbour-open-time
+                                          (valve-flow neighbour-valve)))
+                                    (open-valve neighbour-valve opened)
+                                    valves)))))
+          0)))
 
 (defun day16 (input &key (part 1))
   (setf *best-path-for-set* (make-hash-table :test 'equal))
   (destructuring-bind (valves opened valve-names) (run-parser (parse-file) input)
     (if (= part 1)
         (pressure-for-set 30 :aa 0 opened valves)
-        (progn
+        (progn          
           (pressure-for-set 26 :aa 0 opened valves)
           (iter outer
             (for (my-valves my-score) in-hashtable *best-path-for-set*)
