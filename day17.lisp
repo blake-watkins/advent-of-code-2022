@@ -1,8 +1,9 @@
 (in-package :aoc-2022)
 
 (defun parse-file ()
-  (zero-or-more (either (then (parse-character #\<) (unit :left))
-                        (then (parse-character #\>) (unit :right)))))
+  (with-monad
+    (assign chars (zero-or-more (parse-character "<>")))
+    (unit (mapcar (lambda (c) (case c (#\< :left) (#\> :right))) chars))))
 
 (defparameter *shapes*
   '(((0 0) (0 1) (0 2) (0 3))
@@ -37,55 +38,72 @@
     (maximizing (first abs-stone) into floor)
     (finally (return floor))))
 
-(defparameter *cache* (fset:empty-map))
+;; Create a function that can be called with values. The function will return NIL
+;; until it detects a repeat of length N in the stream of values. Once it does
+;; it will return a two element list with the indices of the repeats. 
+(defun make-sliding-window (n)
+  (let ((history (fset:empty-map))
+        (window (fset:empty-seq))
+        (idx 0))
+    (lambda (val)
+      (let* ((added-window (fset:with-last window val))
+             (new-window (if (<= (fset:size added-window) n)
+                             added-window
+                             (fset:less-first added-window)))
+             (ret (when (fset:domain-contains? history new-window)
+                    (list (1+ (- (fset:lookup history new-window) n))
+                          (1+ (-  idx n))))))
+        (setf window new-window)
+        (setf history (fset:with history new-window idx))
+        (incf idx)
+        ret))))
 
-(defun print-map (map height)
-  (iter
-    (repeat 10)
-    (for r downfrom height)
-    (format t "~{~a~}~%"
-            (iter
-              (for c from 0 below 7)
-              (collect (if (gethash (list r c) map) #\# #\.))))))
+;; Return either the height of the tower after N rocks have fallen if given N,
+;; otherwise return a list of two indices where the pattern of height differences
+;; repeats.
+(defun get-height-or-repeat (parsed &key n window)
+  (iter outer
+    (with map = (make-hash-table :test 'equal))
+    (with highest = 0)
+    
+    (generate jet-idx from 0)
+    (generate jet next (elt parsed (mod (next jet-idx) (length parsed))))
 
-(defun day17 (n input)
-  (let ((parsed (run-parser (parse-file) input))
-        (map (make-hash-table :test 'equal))
-        (highest 0)
-        (heights (fset:empty-seq)))
-    (iter outer
-      (repeat n)
-      (with jet-idx = 0)
-      (for i from 0)
-      (generate jet next (let ((cur jet-idx))
-                           (incf jet-idx)
-                           (elt parsed (mod cur (length parsed)))))
-      (for rock = (elt *shapes* (mod i (length *shapes*))))
-      (for rock-pos = (list (+ 3 highest) 2))
-      (iter
-        (for (state pos) = (move-rock (in outer (next jet)) rock rock-pos map))
-        (setf rock-pos pos)
-        (until (eq :intersect-floor state))
-        (finally
-         (let* ((new-height (1+ (update-map rock rock-pos map)))
-                (height-diff (- new-height highest)))
-           (setf heights (fset:with-last heights height-diff))
-           (when (> (fset:size heights) 500)
-             (setf heights (fset:less-first heights)))
-           (setf highest (max highest new-height)))))
- ;     (until (fset:domain-contains? *cache* heights))
-      (setf *cache* (fset:with *cache* heights i))
-      (finally (return-from outer highest
-;                 (list (fset:lookup *cache* heights) i)
-                 )))))
+    (for rock-idx from 0)
+    (for rock = (elt *shapes* (mod rock-idx (length *shapes*))))
+    (for rock-pos = (list (+ 3 highest) 2))
 
+    (when (and n (= rock-idx n)) (terminate)) ;; break after n rocks, if given n.
+    
+    (iter
+      (for (state pos) = (move-rock (in outer (next jet)) rock rock-pos map))
+      (setf rock-pos pos)
+      (until (eq :intersect-floor state)))
+      
+    (for rock-height = (1+ (update-map rock rock-pos map)))
+    (for height-diff = (- rock-height highest))
+    (setf highest (max highest rock-height))
 
-(defun calc-height (i j input)
-  (destructuring-bind (i-n i-h) i
-    (destructuring-bind (j-n j-h) j
-      (let* ((n 1000000000000)
-             (mod (- j-n i-n))
-             (height-diff (- j-h i-h)))
-        (multiple-value-bind (q r) (floor (- n i-n) mod)
-          (+ (day17 (+ i-n r) input)
-                (* q height-diff)))))))
+    (when window
+      (for repeat? = (funcall window height-diff)) 
+      (until repeat?)) ;; break when there's a repeat, if given a sliding window
+    
+    (finally (return-from outer (if n highest repeat?)))))
+
+(defun calc-height-from-repeat (idx1 idx2 input)
+  (let* ((n 1000000000000)
+         (modulus (- idx2 idx1))
+         (height1 (get-height-or-repeat input :n idx1))
+         (height2 (get-height-or-repeat input :n idx2))
+         (height-diff (- height2 height1)))
+    (multiple-value-bind (num-repeats offset) (floor (- n idx1) modulus)
+      (+ (get-height-or-repeat input :n (+ idx1 offset))
+         (* num-repeats height-diff)))))
+
+(defun day17 (input &key (part 1))
+  (let ((parsed (run-parser (parse-file) input)))
+    (if (= part 1)
+        (get-height-or-repeat parsed :n 2022)
+        (destructuring-bind (idx1 idx2)
+            (get-height-or-repeat parsed :window (make-sliding-window 30))
+          (calc-height-from-repeat idx1 idx2 parsed)))))
