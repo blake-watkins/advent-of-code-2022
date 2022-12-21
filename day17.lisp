@@ -12,6 +12,11 @@
     ((0 0) (1 0) (2 0) (3 0))
     ((0 0) (1 0) (0 1) (1 1))))
 
+;; Given the position of the rock shape's (0 0) coordinate, a rock shape, and
+;; the map, return either
+;;    :intersect-wall if it's horizontally out of bounds
+;;    :intersect-floor if it's below the floor or touching a rock on the map
+;;    :falling otherwise
 (defun check-rock (pos rock map)
   (let ((abs-rock (mapcar (lambda (p) (point+ p pos)) rock)))
     (cond
@@ -21,6 +26,9 @@
        :intersect-floor)
       (t :falling))))
 
+;; Shift the rock left or right depending on JET if possible. Move the rock down
+;; if possible. Return (:falling pos) if the rock is still falling,
+;; (:intersect-floor pos) if the rock landed at pos.
 (defun move-rock (jet rock pos map)
   (let ((shifted-pos (point+ pos (if (eq jet :left) '(0 -1) '(0 1)))))
     (when (eq :falling (check-rock shifted-pos rock map))
@@ -30,6 +38,7 @@
           (list :falling fallen-pos)
           (list :intersect-floor pos)))))
 
+;; Transfer all parts of the rock shape at position pos to the map.
 (defun update-map (rock pos map)
   (iter
     (for stone in rock)
