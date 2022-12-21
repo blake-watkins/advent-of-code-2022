@@ -13,6 +13,7 @@
 (defun mix (nums)
   (iter
     (with ret = nums)
+    (format t "~a~%" (fset:image #'first ret))
     (for (num idx) in-fset (fset:sort nums #'< :key #'second))
     (setf ret (mix-num ret num idx))
     (finally (return ret))))
