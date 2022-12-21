@@ -37,13 +37,13 @@
   (make-expr :x1 (- (expr-x1 e1) (expr-x1 e2)) :x0 (- (expr-x0 e1) (expr-x0 e2))))
 
 (defun expr* (e1 e2)
-  (when (and (not (= 0 (expr-x1 e1))) (not (= 0 (expr-x1 e2))))
+  (when (and (/= 0 (expr-x1 e1)) (/= 0 (expr-x1 e2)))
     (error 'cant-multiply))
   (make-expr :x1 (+ (* (expr-x1 e1) (expr-x0 e2)) (* (expr-x0 e1) (expr-x1 e2)))
              :x0 (* (expr-x0 e1) (expr-x0 e2))))
 
 (defun expr/ (e1 e2)
-  (when (or (not (= 0 (expr-x1 e2))) (= 0 (expr-x0 e2)))
+  (when (or (/= 0 (expr-x1 e2)) (= 0 (expr-x0 e2)))
     (error 'cant-divide))
   (make-expr :x1 (/ (expr-x1 e1) (expr-x0 e2))             
              :x0 (/ (expr-x0 e1) (expr-x0 e2))))
