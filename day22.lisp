@@ -8,7 +8,7 @@
                            (then (parse-character #\Space) (unit :blank))
                            (then (parse-character #\.) (unit :open))
                            (then (parse-character #\#) (unit :wall))))))
-    (unit (hash-table-from-list-list parsed))))
+    (unit parsed)))
 
 (defun parse-path ()
   (zero-or-more (either (parse-number) (parse-keyword #'upper-case-p))))
@@ -59,18 +59,60 @@
                                (eq next-square :blank))
                        cur)))))
 
+(defparameter *teleports*
+  '(((0 0) :up ((:l :f) (:l :l) ((0 2) :down (:f :l) (:f :f))))
+    ((0 1) :up ((:l :f) (:l :l) ((0 2) :right (:f :f) (:l :f))))
+    ((0 1) :left ((:l :l) (:f :l) ((1 1) :down (:f :l) (:f :f))))
+    ((-1 2) :up ((:l :f) (:l :l) ((1 0) :down (:f :l) (:f :f))))
+    ((0 3) :right ((:f :f) (:l :f) ((2 3) :left (:l :l) (:f :l))))
+    ((1 3) :right ((:f :f) (:l :f) ((2 3) :down (:f :l) (:f :f))))
+    ((1 3) :up ((:l :f) (:l :l) ((1 2) :left (:l :l) (:f :l))))
+    ((2 4) :right ((:f :f) (:l :f) ((0 2) :left (:l :l) (:l :f))))
+    ((3 3) :down ((:f :f) (:f :l) ((2 2) :up (:l :l) (:l :f))))
+    ((3 2) :down ((:f :f) (:f :l) ((1 0) :up (:l :l) (:l :f))))
+    ((2 1) :left ((:f :l) (:l :l) ((1 1) :up (:l :l) (:l :f))))
+    ((2 1) :down ((:f :f) (:f :l) ((2 2) :right (:l :f) (:f :f))))
+    ((2 0) :down ((:f :f) (:f :l) ((2 2) :up (:l :l) (:l :f))))
+    ((1 -1) :left ((:f :l) (:l :l) ((2 3) :up (:l :l) (:l :f))))))
+
+(defun map-range (pos r1-s r1-e r2-s r2-e)
+  (iter 
+    (with r1-dir = (point-signum (point- r1-e r1-s)))
+    (with r2-dir = (point-signum (point- r2-e r2-s)))
+    (for from initially r1-s then (point+ from r1-dir))
+    (for to initially r2-s then (point+ to r2-dir))
+    (until (equal pos from))
+    (finally (return (when (equal pos from) to)))))
+
+(defun translate (l-f-pos tile multiplier)
+  (map 'list
+       (lambda (l-f tile-coord)
+         (+ (* tile-coord multiplier) (if (eq :f l-f) 0 (1- multiplier))))
+       l-f-pos
+       tile))
+
+(defun teleport (pos dir multiplier)
+  (let* ((tile (mapcar (lambda (c) (floor c multiplier)) pos))
+         (teleport (iter
+                     (for (t-tile t-dir teleport) in *teleports*)
+                     (finding teleport such-that (and (equal tile t-tile)
+                                                      (eq dir t-dir))))))
+    (destructuring-bind (r1-s r1-e (to-tile to-dir r2-s r2-e)) teleport
+      (list (map-range pos
+                       (translate r1-s tile multiplier)
+                       (translate r1-e tile multiplier)
+                       (translate r2-s to-tile multiplier)
+                       (translate r2-e to-tile multiplier))
+            to-dir))))
+
 (defun off-grid (pos map)
   (let ((square (gethash pos map)))
     (or (null square) (eq :blank square))))
 
 (defun move-one (pos dir map)
-  (let ((next-pos (move-in-direction pos dir)))
-    (when (off-grid next-pos map)
-      (setf next-pos (last-in-direction pos (opposite-direction dir) map)))
-    (let ((next-square (gethash next-pos map)))
-      (if (eq next-square :wall)
-          pos
-          next-pos))))
+  (let ()
+
+))
 
 (defun password (pos dir)
   (+ (* 1000 (1+ (first pos)))
@@ -86,6 +128,15 @@
       (if (numberp instr)
           (iter
             (repeat instr)
-            (setf pos (move-one pos dir map)))
+            (for next-pos = (move-in-direction pos dir))
+            (for next-dir = dir)
+            (when (off-grid next-pos map)
+              (destructuring-bind (new-pos new-dir) (teleport next-pos dir 50)
+                (setf next-pos new-pos)
+                (setf next-dir new-dir)))
+            (let ((next-square (gethash next-pos map)))
+              (unless (eq next-square :wall)
+                (setf pos next-pos)
+                (setf dir next-dir))))
           (setf dir (turn dir instr)))
       (finally (return (password pos dir))))))
