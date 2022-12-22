@@ -1,6 +1,6 @@
 (in-package :aoc-2022)
 
-(defun parse-map ()
+(defun parse-map (multiplier)
   (with-monad
    (assign parsed
            (parse-lines
@@ -8,14 +8,24 @@
                            (then (parse-character #\Space) (unit :blank))
                            (then (parse-character #\.) (unit :open))
                            (then (parse-character #\#) (unit :wall))))))
-    (unit parsed)))
+    (unit (iter
+            (with ret = (make-hash-table :test 'equal))
+            (for r-idx from 0)
+            (while (<= (* (1+ (floor r-idx multiplier)) multiplier) (length parsed)))
+            (for r in parsed)
+            
+            (iter
+              (for c-idx from 0)
+              (while (<= (* (1+ (floor c-idx multiplier)) multiplier) (length r)))
+              (setf (gethash (list r-idx c-idx) ret) (elt r c-idx)))
+            (finally (return ret))))))
 
 (defun parse-path ()
   (zero-or-more (either (parse-number) (parse-keyword #'upper-case-p))))
 
 (defun parse-file ()
   (with-monad
-    (assign map (parse-map))
+    (assign map (parse-map 50))
     (assign path (parse-until (parse-path)))
     (unit (list map path))))
 
@@ -59,21 +69,27 @@
                                (eq next-square :blank))
                        cur)))))
 
+(defparameter *range-info*
+  '((:up ((:l :f) (:l :l)))
+    (:down ((:f :f) (:f :l)))
+    (:left ((:f :l) (:l :l)))
+    (:right ((:f :f) (:l :f)))))
+
 (defparameter *teleports*
-  '(((0 0) :up ((:l :f) (:l :l) ((0 2) :down (:f :l) (:f :f))))
-    ((0 1) :up ((:l :f) (:l :l) ((0 2) :right (:f :f) (:l :f))))
-    ((0 1) :left ((:l :l) (:f :l) ((1 1) :down (:f :l) (:f :f))))
-    ((-1 2) :up ((:l :f) (:l :l) ((1 0) :down (:f :l) (:f :f))))
-    ((0 3) :right ((:f :f) (:l :f) ((2 3) :left (:l :l) (:f :l))))
-    ((1 3) :right ((:f :f) (:l :f) ((2 3) :down (:f :l) (:f :f))))
-    ((1 3) :up ((:l :f) (:l :l) ((1 2) :left (:l :l) (:f :l))))
-    ((2 4) :right ((:f :f) (:l :f) ((0 2) :left (:l :l) (:l :f))))
-    ((3 3) :down ((:f :f) (:f :l) ((2 2) :up (:l :l) (:l :f))))
-    ((3 2) :down ((:f :f) (:f :l) ((1 0) :up (:l :l) (:l :f))))
-    ((2 1) :left ((:f :l) (:l :l) ((1 1) :up (:l :l) (:l :f))))
-    ((2 1) :down ((:f :f) (:f :l) ((2 2) :right (:l :f) (:f :f))))
-    ((2 0) :down ((:f :f) (:f :l) ((2 2) :up (:l :l) (:l :f))))
-    ((1 -1) :left ((:f :l) (:l :l) ((2 3) :up (:l :l) (:l :f))))))
+  '(((-1 1) :up ((3 0) :right))
+    ((-1 2) :up ((3 0) :up))
+    ((0 3) :right ((2 1) :left :flipped))
+    ((1 2) :down ((1 1) :left))
+    ((1 2) :right ((0 2) :up))
+    ((2 2) :right ((0 2) :left :flipped))
+    ((3 1) :down ((3 0) :left))
+    ((3 1) :right ((2 1) :up))
+    ((4 0) :down ((0 2) :down))
+    ((3 -1) :left ((0 1) :down))
+    ((2 -1) :left ((0 1) :right :flipped))
+    ((1 0) :up ((1 1) :right))
+    ((1 0) :left ((2 0) :down))
+    ((0 0) :left ((2 0) :right :flipped))))
 
 (defun map-range (pos r1-s r1-e r2-s r2-e)
   (iter 
@@ -93,26 +109,26 @@
 
 (defun teleport (pos dir multiplier)
   (let* ((tile (mapcar (lambda (c) (floor c multiplier)) pos))
-         (teleport (iter
-                     (for (t-tile t-dir teleport) in *teleports*)
-                     (finding teleport such-that (and (equal tile t-tile)
-                                                      (eq dir t-dir))))))
-    (destructuring-bind (r1-s r1-e (to-tile to-dir r2-s r2-e)) teleport
-      (list (map-range pos
-                       (translate r1-s tile multiplier)
-                       (translate r1-e tile multiplier)
-                       (translate r2-s to-tile multiplier)
-                       (translate r2-e to-tile multiplier))
-            to-dir))))
+         (teleport 
+           (iter
+             (for (from-tile from-dir teleport) in *teleports*)
+             (finding teleport such-that (and (equal tile from-tile)
+                                              (eq dir from-dir))))))
+    (destructuring-bind (to-tile to-dir &optional flipped?) teleport
+      (destructuring-bind (r1-s r1-e) (second (find dir *range-info* :key #'first))
+        (destructuring-bind (r2-s r2-e)
+            (let ((to-info (second (find to-dir *range-info* :key #'first))))
+              (if flipped? (reverse to-info) to-info))
+          (list (map-range pos
+                           (translate r1-s tile multiplier)
+                           (translate r1-e tile multiplier)
+                           (translate r2-s to-tile multiplier)
+                           (translate r2-e to-tile multiplier))
+                to-dir))))))
 
 (defun off-grid (pos map)
   (let ((square (gethash pos map)))
     (or (null square) (eq :blank square))))
-
-(defun move-one (pos dir map)
-  (let ()
-
-))
 
 (defun password (pos dir)
   (+ (* 1000 (1+ (first pos)))
