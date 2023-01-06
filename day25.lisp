@@ -11,13 +11,11 @@
       acc
       (snafu-to-base10 (cdr snafu) :acc (+ (* acc 5) (car snafu)))))
 
-(defun base10-to-snafu (num)
-  (labels ((to-digits (num)
-             (if (<= num 2)
-                 (list num)
-                 (multiple-value-bind (q r) (floor (+ num 2) 5)
-                   (cons (- r 2) (to-digits q))))))
-    (reverse (to-digits num))))
+(defun base10-to-snafu (num &key (acc nil))
+  (if (= 0 num)
+      (or acc (list 0))
+      (multiple-value-bind (q r) (floor (+ num 2) 5)
+        (base10-to-snafu q :acc (cons (- r 2) acc)))))
 
 (defun format-snafu (snafu)
   (format nil "~{~a~}" (mapcar (lambda (d) (elt "=-012" (+ d 2))) snafu)))
