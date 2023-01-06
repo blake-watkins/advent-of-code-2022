@@ -72,39 +72,39 @@
         (gethash square occupied)))
 
 (define-condition found-end (condition)
-  ((distance :initarg :distance :reader path-distance)))
+  ((distance :initarg :distance)))
 
 (defun find-path (start start-time end occupied)
-  (labels ((vertex-fn (cur parent distance)
-             (declare (ignorable parent distance))
-             (when (equal (first cur) end)
-               (signal 'found-end :distance (second cur))
-               (break)))
-           (neighbour-fn (vertex)
-             (destructuring-bind (pos time) vertex
-               (mapcar
-                (lambda (square) (list (list square (1+ time)) (1+ time)))
-                (remove-if-not
-                 (lambda (next-square)
-                   (or (equal next-square end)
-                       (equal next-square start)
-                       (and (nth-value 1 (gethash next-square occupied))
-                            (not (is-occupied-at next-square
-                                                 (1+ time)
-                                                 occupied)))))
-                 (mapcar
-                  (lambda (offset) (point+ offset pos))
-                  '((-1 0) (1 0) (0 -1) (0 1) (0 0)))))))
-           (heuristic-fn (vertex)
-             (manhattan (first vertex) end)))
+  (labels
+      ((vertex-fn (cur parent distance)
+         (declare (ignore parent distance))
+         (when (equal (first cur) end)
+           (signal 'found-end :distance (second cur))))
+       (neighbour-fn (vertex)
+         (destructuring-bind (pos time) vertex
+           (mapcar
+            (lambda (square) (list (list square (1+ time)) (1+ time)))
+            (remove-if-not
+             (lambda (next-square)
+               (or (equal next-square end)
+                   (equal next-square start)
+                   (and (nth-value 1 (gethash next-square occupied))
+                        (not (is-occupied-at next-square (1+ time) occupied)))))
+             (mapcar
+              (lambda (offset) (point+ offset pos))
+              '((-1 0) (1 0) (0 -1) (0 1) (0 0)))))))
+       (heuristic-fn (vertex)
+         (manhattan (first vertex) end)))
     (handler-case
         (a-star (list start start-time) #'vertex-fn #'neighbour-fn #'heuristic-fn)
-      (found-end (fe) (path-distance fe)))))
+      (found-end (fe) (slot-value fe 'distance)))))
 
-(defun day24 (input)
+(defun day24 (input &key (part 1))
   (destructuring-bind (start end dimensions blizzards) (get-map input)
     (let* ((occupied (get-occupied dimensions blizzards))
-           (to-end-time (find-path start 0 end occupied))
-           (to-start-time (find-path end to-end-time start occupied))
-           (to-end-again-time (find-path start to-start-time end occupied)))
-      (list to-end-time to-end-again-time))))
+           (to-end-time (find-path start 0 end occupied)))
+      (if (= part 1)
+          to-end-time
+          (let* ((to-start-time (find-path end to-end-time start occupied))
+                 (to-end-again-time (find-path start to-start-time end occupied)))
+            to-end-again-time)))))
