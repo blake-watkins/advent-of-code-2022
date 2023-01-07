@@ -21,15 +21,16 @@
 ;; for each direction, store its (r c) offset, 
 ;; and a rotor to roll in that direction, and  the next direction clockwise,
 (defparameter *direction-info*
-  `((:right (0  1) ,(q-rotor (/ pi 2) '(0 1 0)) :down)
-    (:left  (0 -1) ,(q-rotor (/ pi 2) '(0 -1 0)) :up)
-    (:up    (-1 0) ,(q-rotor (/ pi 2) '(-1 0 0)) :right)
-    (:down  ( 1 0) ,(q-rotor (/ pi 2) '( 1 0 0)) :left)))
+  `((:right (0 1) ,(q-rotor (/ pi 2) '(0 1 0)))
+    (:down  (1 0) ,(q-rotor (/ pi 2) '(1 0 0)))
+    (:left  (0 -1) ,(q-rotor (/ pi 2) '(0 -1 0)))
+    (:up    (-1 0) ,(q-rotor (/ pi 2) '(-1 0 0)))))
 
 (defun turn (dir l-r)
-  (ecase l-r
-    (:r (fourth (find dir *direction-info* :key #'first)))
-    (:l (first (find dir *direction-info* :key #'fourth)))))
+  (let* ((cur-idx (position dir *direction-info* :key #'first))
+         (new-idx (mod (+ cur-idx (if (eq l-r :r) 1 -1))
+                       (length *direction-info*))))
+    (first (elt *direction-info* new-idx))))
 
 (defun direction-from (source target)
   (let ((diff (point- target source)))
@@ -140,8 +141,8 @@
     (for i from 0)
     (for twisted first rotation then (q* clockwise-rotor twisted))
     (for ret first dir then (turn ret :r))
-    (for face-origin = (gethash (rc-to-cube '(0 0) twisted face-size) origins))
-    (finding ret such-that face-origin)))
+    (for correct-twist = (gethash (rc-to-cube '(0 0) twisted face-size) origins))
+    (finding ret such-that correct-twist)))
 
 (defun day22 (input)
   (destructuring-bind (map path) (run-parser (parse-file) input)
@@ -166,13 +167,9 @@
                 (setf pos next-pos)
                 (setf rotation next-rotation))))
           (setf dir (turn dir instr)))
-;;      (break)
-      (finally (return (password (gethash (rc-to-cube pos rotation face-size)
-                                          cube)
-                                 (find-original-dir dir
-                                                    rotation
-                                                    origins
-                                                    face-size)))))))
+      (finally
+       (return (password (gethash (rc-to-cube pos rotation face-size) cube)
+                         (find-original-dir dir rotation origins face-size)))))))
 
 
 
