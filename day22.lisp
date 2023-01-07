@@ -2,101 +2,34 @@
 
 (defun parse-map ()
   (with-monad
-    (assign parsed
-            (parse-lines
-             (zero-or-more (either
-                            (then (parse-character #\Space) (unit :blank))
-                            (then (parse-character #\.) (unit :open))
-                            (then (parse-character #\#) (unit :wall))))))
-    (unit (hash-table-from-list-list parsed))))
+    (parse-lines
+     (one-or-more
+      (with-monad
+        (assign char (parse-character " .#"))
+        (unit (case char (#\Space :blank) (#\. :open) (#\# :wall))))))))
 
 (defun parse-path ()
-  (zero-or-more (either (parse-number) (parse-keyword #'upper-case-p))))
+  (one-or-more (either (parse-number) (parse-keyword #'upper-case-p))))
 
 (defun parse-file ()
   (with-monad
     (assign map (parse-map))
+    (parse-newline)
     (assign path (parse-until (parse-path)))
-    (unit (list map path))))
-
-
-(defun off-grid (pos map)
-  (let ((square (gethash pos map)))
-    (or (null square) (eq :blank square))))
-
-(defun password (pos dir)
-  (+ (* 1000 (1+ (first pos)))
-     (* 4 (1+ (second pos)))
-     (ecase dir (:right 0) (:down 1) (:left 2) (:up 3))))
-
-(defun day22 (input)
-  (destructuring-bind (map path) (run-parser (parse-file) input)
-    (iter
-      (with pos = (first-in-direction '(0 0) :right map))
-      (with dir = :right)      
-      (for instr in path)
-      (if (numberp instr)
-          (iter
-            (repeat instr)
-            (for next-pos = (move-in-direction pos dir))
-            (for next-dir = dir)
-            (when (off-grid next-pos map)
-              (destructuring-bind (new-pos new-dir) (teleport next-pos dir 50)
-                (setf next-pos new-pos)
-                (setf next-dir new-dir)))
-            (let ((next-square (gethash next-pos map)))
-              (unless (eq next-square :wall)
-                (setf pos next-pos)
-                (setf dir next-dir))))
-          (setf dir (turn dir instr)))
-      (finally (return (password pos dir))))))
-
-(defun q* (q1 q2)
-  (destructuring-bind (a1 b1 c1 d1) (if (numberp q1) (list q1 0 0 0) q1)
-    (destructuring-bind (a2 b2 c2 d2) (if (numberp q2) (list q2 0 0 0) q2)
-      (list (+ (* a1 a2) (* -1 b1 b2) (* -1 c1 c2) (* -1 d1 d2))
-            (+ (* a1 b2) (* b1 a2)    (* c1 d2)    (* -1 d1 c2))
-            (+ (* a1 c2) (* -1 b1 d2) (* c1 a2)    (* d1 b2))
-            (+ (* a1 d2) (* b1 c2)    (* -1 c1 b2) (* d1 a2))))))
-
-(defun q-conjugate (q)
-  (cons (first q) (mapcar #'- (cdr q))))
-
-(defun q-norm (q)
-  (sqrt (reduce #'+ q :key (lambda (x) (* x x)) :initial-value 0)))
-
-(defun q-normalize (q)
-  (q* (/ 1 (q-norm q)) q))
-
-(defun q-reciprocal (q)
-  (q* (/ 1 (expt (q-norm q) 2)) (q-conjugate q)))
-
-(defun q-round (q)
-  (mapcar #'round q))
-
-(defun q-rotor (angle axis)
-  (cons (cos (/ angle 2)) (mapcar (lambda (c) (* (sin (/ angle 2)) c)) axis)))
-
-(defun q-rotate (vector rotor)
-  (let ((rotor-1 (q-reciprocal rotor)))
-    (cdr (q* rotor (q* (q-pure-q vector) rotor-1)))))
-
-
-
-(defparameter *cube-rotation* '(1 0 0 0))
+    (unit (list (hash-table-from-list-list map) path))))
 
 ;; for each direction, store its (r c) offset, 
 ;; and a rotor to roll in that direction, and  the next direction clockwise,
 (defparameter *direction-info*
-  `((:right (0  1) ,(q-rotor (/ pi 2) '(0 -1 0)) :down)
-    (:left  (0 -1) ,(q-rotor (/ pi 2) '(0  1 0)) :up)
-    (:up    (-1 0) ,(q-rotor (/ pi 2) '( 1 0 0)) :right)
-    (:down  ( 1 0) ,(q-rotor (/ pi 2) '(-1 0 0)) :left)))
+  `((:right (0  1) ,(q-rotor (/ pi 2) '(0 1 0)) :down)
+    (:left  (0 -1) ,(q-rotor (/ pi 2) '(0 -1 0)) :up)
+    (:up    (-1 0) ,(q-rotor (/ pi 2) '(-1 0 0)) :right)
+    (:down  ( 1 0) ,(q-rotor (/ pi 2) '( 1 0 0)) :left)))
 
 (defun turn (dir l-r)
   (ecase l-r
     (:r (fourth (find dir *direction-info* :key #'first)))
-    (:l (fourth (find dir *direction-info* :key #'first)))))
+    (:l (first (find dir *direction-info* :key #'fourth)))))
 
 (defun direction-from (source target)
   (let ((diff (point- target source)))
@@ -109,124 +42,151 @@
   (third (find dir *direction-info* :key #'first)))
 
 (defun roll (rotor direction)
-  (q* rotor (direction-rotor direction)))
+  (q* (direction-rotor direction) rotor))
 
-(defun next-square-in-direction (rc dir tile-size rotation)
-  (destructuring-bind (r c) (point+ rc (direction-offset dir))
-    (let ((next-rc (list (mod r tile-size) (mod c tile-size)))
-          (next-rotation
-            (if (and (<= 0 r (1- tile-size)) (<= 0 c (1- tile-size)))
-                rotation
-                (roll rotation 
-                      (cond
-                        ((< r 0) :up) ((>= r tile-size) :down)
-                        ((< c 0) :left) ((>= c tile-size) :right))))))
-      (list next-rc next-rotation))))
-
-;; Checks that the three other points on the square of size offset exist in the
+;; Checks that the four corners of the square of size OFFSET exist in the
 ;; map and that they're not blank.
-(defun valid-tile-corners (pos offset map)
-  (destructuring-bind (r c) pos
-    (every (lambda (pos)
-             (let ((square (gethash pos map)))
-               (and square (not (eq :blank square)))))
-           (list (list (+ r offset) c)
-                 (list r (+ c offset))
-                 (list (+ r offset) (+ c offset))))))
+(defun valid-face-corners (pos size map)
+  (every (lambda (offset)
+           (let* ((coord (point+ pos (point* size offset)))
+                  (square (gethash coord map)))
+             (and square (not (eq :blank square)))))
+         '((0 0) (1 0) (0 1) (1 1))))
 
-;; Find the tile size and first tile index rc by finding the first non-blank
+;; Is a face index RC a valid face of size face-size
+(defun valid-face (rc face-size map)
+  (valid-face-corners (point* face-size rc) (1- face-size) map))
+
+;; Find the face size and first face index rc by finding the first non-blank
 ;; square in the first row, then trying increasing square sizes until one of the
 ;; corners becomes invalid.
-(defun get-tile-information (map)
+(defun get-first-face (map)
   (let ((col (iter
                (for c from 0)
                (while (eq (gethash (list 0 c) map) :blank))
                (finally (return c)))))
     (iter
-      (for tile-size from 1)
-      (while (valid-tile-corners (list 0 col) tile-size map) )
-      (finally (return (list tile-size (list 0 (floor col tile-size))))))))
-
-;; Is a tile index RC a valid tile of size tile-size
-(defun valid-tile (rc tile-size map)
-  (valid-tile-corners (mapcar (lambda (x) (* x tile-size)) rc) (1- tile-size) map))
+      (for face-size from 1)
+      (while (valid-face-corners (list 0 col) face-size map))
+      (finally (return (list face-size (list 0 (floor col face-size))))))))
 
 (defun get-cube (map)
-  (destructuring-bind (tile-size first-tile) (get-tile-information map)
+  (destructuring-bind (face-size first-face) (get-first-face map)
     (labels ((neighbours (pos)
                (iter
                  (for (nil offset) in *direction-info*)
                  (for neighbour = (point+ pos offset))
-                 (when (valid-tile neighbour tile-size map)
+                 (when (valid-face neighbour face-size map)
                    (collect neighbour)))))
       (iter
-        (with tile-rotations = (make-hash-table :test 'equal))
+        (with face-info = (make-hash-table :test 'equal))
         (with cube = (make-hash-table :test 'equal))
-        (for (tile parent distance) in-bfs-from first-tile
+        (with origins = (make-hash-table :test 'equal))
+        (for (face parent distance) in-bfs-from first-face
              neighbours #'neighbours
              test 'equal
              single t)
-        (for tile-rotation =
+        (for face-rotation =
              (if parent
-                 (roll (gethash parent tile-rotations)
-                       (direction-from parent tile))
+                 (roll (gethash parent face-info)
+                       (direction-from parent face))
                  '(1 0 0 0)))
-        (setf (gethash tile tile-rotations) tile-rotation)
-        (copy-tile-to-cube tile tile-size tile-rotation map cube)
-        (finally (return (list cube tile-size tile-rotations)))))))
+        (setf (gethash face face-info) face-rotation)
+        (setf (gethash (rc-to-cube '(0 0) face-rotation face-size) origins)
+              (point* face-size face))
+        (copy-face-to-cube face face-size face-rotation map cube)
+        (finally (return (list cube face-size origins)))))))
 
-(defparameter *original-rc* (make-hash-table :test 'equal))
-
-(defun copy-tile-to-cube (tile tile-size rotation map cube)
+(defun copy-face-to-cube (face face-size rotation map cube)
   (iter
-    (with tile-offset-rc = (point* tile-size tile))
-    (for r from 0 below tile-size)
+    (with face-offset-rc = (point* face-size face))
+    (for r from 0 below face-size)
     (iter
-      (for c from 0 below tile-size)
+      (for c from 0 below face-size)
       (for rc = (list r c))
-      (for cube-pos = (rc-to-cube rc rotation tile-size))
-      (for orig-pos = (point+ rc tile-offset-rc))
-      (setf (gethash cube-pos cube) (gethash orig-pos map))
-      (setf (gethash cube-pos *original-rc*) orig-pos))))
+      (for cube-pos = (rc-to-cube rc rotation face-size))
+      (for orig-rc = (point+ rc face-offset-rc))
+      (setf (gethash cube-pos cube) (gethash orig-rc map)))))
 
-(defun rc-to-xyz (rc tile-size)
-  (destructuring-bind (r c) rc
-    (list c (- tile-size r 1) 0)))
+(defun rc-to-base (rc face-size)
+  (let ((center (cube-center face-size)))
+    (point- (destructuring-bind (r c) rc
+              (list c (- face-size r 1) 0))
+            center)))
 
-(defun cube-center-xyz (tile-size)
-  (let ((half-length (/ (1- tile-size) 2)))
+(defun cube-center (face-size)
+  (let ((half-length (/ (1- face-size) 2)))
     (list half-length half-length (1+ half-length))))
 
-(defun rc-to-cube (rc cube-rotation tile-size)
-  (let* ((center (cube-center-xyz tile-size))
-         (xyz (point- (rc-to-xyz rc tile-size) center))
-         (rotated-xyz (point+ (q-rotate xyz cube-rotation) center)))
-    (mapcar #'round rotated-xyz)))
+(defun rc-to-cube (rc cube-rotation face-size)
+  (let* ((center (cube-center face-size)))
+    (q-round (point+ (q-rotate-vector (rc-to-base rc face-size)
+                                      (q-reciprocal cube-rotation))
+                     center))))
+
+(defun cube-to-rc (cube cube-rotation face-size)
+  (let ((center (cube-center face-size)))
+    (destructuring-bind (x y z)
+        (q-round (point+ (q-rotate-vector (point- cube center) cube-rotation)
+                         center))
+      (if (/= 0 z)
+          (error "Not on base.")
+          (list (- face-size 1 y) x)))))
+
+(defun next-square-in-direction (rc dir face-size rotation)
+  (destructuring-bind (r c) (point+ rc (direction-offset dir))
+    (let ((next-rc (list (mod r face-size) (mod c face-size)))
+          (next-rotation
+            (if (and (<= 0 r (1- face-size)) (<= 0 c (1- face-size)))
+                rotation
+                (roll rotation 
+                      (cond
+                        ((< r 0) :up) ((>= r face-size) :down)
+                        ((< c 0) :left) ((>= c face-size) :right))))))
+      (list next-rc next-rotation))))
+
+(defun password (pos dir)
+  (+ (* 1000 (1+ (first pos)))
+     (* 4 (1+ (second pos)))
+     (ecase dir (:right 0) (:down 1) (:left 2) (:up 3))))
+
+(defun find-original-rc (pos dir rotation origins face-size)
+  (iter
+    (with orig-cube = (rc-to-cube pos rotation face-size))
+    (for i from 0)
+    (for twist first '(1 0 0 0) then (q* (q-rotor (/ PI 2) '(0 0 -1)) twist))
+    (for face-origin = (rc-to-cube '(0 0) (q* twist rotation) face-size))
+    (finding (list (point+ (gethash face-origin origins)
+                           (cube-to-rc orig-cube (q* twist rotation) face-size))
+                   (iter
+                     (repeat (1+ i))
+                     (for ret first dir then (turn ret :r))
+                     (finally (return ret))))
+             such-that (gethash face-origin origins))))
 
 (defun day22 (input)
   (destructuring-bind (map path) (run-parser (parse-file) input)
     (iter
-      (with (cube tile-size) = (get-cube map))
+      (with (cube face-size origins) = (get-cube map))
       (with rotation = '(1 0 0 0))
       (with pos = '(0 0))
       (with dir = :right)      
-      (initially (setf *cube* cube))
       (for instr in path)
       (if (numberp instr)
           (iter
             (repeat instr)
             (for (next-pos next-rotation) =
-                 (next-square-in-direction pos dir tile-size rotation))
+                 (next-square-in-direction pos dir face-size rotation))
             (let ((next-square
-                    (gethash (rc-to-cube next-pos next-rotation tile-size) cube)))
+                    (gethash (rc-to-cube next-pos next-rotation face-size) cube)))
               (unless (eq next-square :wall)
                 (setf pos next-pos)
                 (setf rotation next-rotation))))
           (setf dir (turn dir instr)))
-      (finally (return (password
-                        (gethash (rc-to-cube pos rotation tile-size)
-                                 *original-rc*)
-                        dir))))))
+;;      (break)
+      (finally (return (destructuring-bind (pos dir)
+                           (find-original-rc pos dir rotation origins face-size)
+                         (password pos dir)))))))
 
 
 
