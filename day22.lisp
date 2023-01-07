@@ -94,10 +94,10 @@
         (setf (gethash face face-info) face-rotation)
         (setf (gethash (rc-to-cube '(0 0) face-rotation face-size) origins)
               (point* face-size face))
-        (copy-face-to-cube face face-size face-rotation map cube)
+        (copy-face-to-cube face face-size face-rotation cube)
         (finally (return (list cube face-size origins)))))))
 
-(defun copy-face-to-cube (face face-size rotation map cube)
+(defun copy-face-to-cube (face face-size rotation cube)
   (iter
     (with face-offset-rc = (point* face-size face))
     (for r from 0 below face-size)
@@ -106,32 +106,16 @@
       (for rc = (list r c))
       (for cube-pos = (rc-to-cube rc rotation face-size))
       (for orig-rc = (point+ rc face-offset-rc))
-      (setf (gethash cube-pos cube) (gethash orig-rc map)))))
-
-(defun rc-to-base (rc face-size)
-  (let ((center (cube-center face-size)))
-    (point- (destructuring-bind (r c) rc
-              (list c (- face-size r 1) 0))
-            center)))
-
-(defun cube-center (face-size)
-  (let ((half-length (/ (1- face-size) 2)))
-    (list half-length half-length (1+ half-length))))
+      (setf (gethash cube-pos cube) orig-rc))))
 
 (defun rc-to-cube (rc cube-rotation face-size)
-  (let* ((center (cube-center face-size)))
-    (q-round (point+ (q-rotate-vector (rc-to-base rc face-size)
-                                      (q-reciprocal cube-rotation))
-                     center))))
-
-(defun cube-to-rc (cube cube-rotation face-size)
-  (let ((center (cube-center face-size)))
-    (destructuring-bind (x y z)
-        (q-round (point+ (q-rotate-vector (point- cube center) cube-rotation)
-                         center))
-      (if (/= 0 z)
-          (error "Not on base.")
-          (list (- face-size 1 y) x)))))
+  (let* ((half-length (/ (1- face-size) 2))
+         (center (list half-length half-length (1+ half-length))))
+    (destructuring-bind (r c) rc
+      (q-round (point+ (q-rotate-vector
+                        (point- (list c (- face-size r 1) 0) center)
+                        (q-reciprocal cube-rotation))
+                       center)))))
 
 (defun next-square-in-direction (rc dir face-size rotation)
   (destructuring-bind (r c) (point+ rc (direction-offset dir))
@@ -150,19 +134,14 @@
      (* 4 (1+ (second pos)))
      (ecase dir (:right 0) (:down 1) (:left 2) (:up 3))))
 
-(defun find-original-rc (pos dir rotation origins face-size)
+(defun find-original-dir (dir rotation origins face-size)
   (iter
-    (with orig-cube = (rc-to-cube pos rotation face-size))
+    (with clockwise-rotor = (q-rotor (/ PI 2) '(0 0 -1)))
     (for i from 0)
-    (for twist first '(1 0 0 0) then (q* (q-rotor (/ PI 2) '(0 0 -1)) twist))
-    (for face-origin = (rc-to-cube '(0 0) (q* twist rotation) face-size))
-    (finding (list (point+ (gethash face-origin origins)
-                           (cube-to-rc orig-cube (q* twist rotation) face-size))
-                   (iter
-                     (repeat (1+ i))
-                     (for ret first dir then (turn ret :r))
-                     (finally (return ret))))
-             such-that (gethash face-origin origins))))
+    (for twisted first rotation then (q* clockwise-rotor twisted))
+    (for ret first dir then (turn ret :r))
+    (for face-origin = (gethash (rc-to-cube '(0 0) twisted face-size) origins))
+    (finding ret such-that face-origin)))
 
 (defun day22 (input)
   (destructuring-bind (map path) (run-parser (parse-file) input)
@@ -178,15 +157,22 @@
             (for (next-pos next-rotation) =
                  (next-square-in-direction pos dir face-size rotation))
             (let ((next-square
-                    (gethash (rc-to-cube next-pos next-rotation face-size) cube)))
+                    (gethash (gethash (rc-to-cube next-pos
+                                                  next-rotation
+                                                  face-size)
+                                      cube)
+                             map)))
               (unless (eq next-square :wall)
                 (setf pos next-pos)
                 (setf rotation next-rotation))))
           (setf dir (turn dir instr)))
 ;;      (break)
-      (finally (return (destructuring-bind (pos dir)
-                           (find-original-rc pos dir rotation origins face-size)
-                         (password pos dir)))))))
+      (finally (return (password (gethash (rc-to-cube pos rotation face-size)
+                                          cube)
+                                 (find-original-dir dir
+                                                    rotation
+                                                    origins
+                                                    face-size)))))))
 
 
 
