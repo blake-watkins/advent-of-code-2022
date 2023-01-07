@@ -157,15 +157,11 @@
             (repeat instr)
             (for (next-pos next-rotation) =
                  (next-square-in-direction pos dir face-size rotation))
-            (let ((next-square
-                    (gethash (gethash (rc-to-cube next-pos
-                                                  next-rotation
-                                                  face-size)
-                                      cube)
-                             map)))
-              (unless (eq next-square :wall)
-                (setf pos next-pos)
-                (setf rotation next-rotation))))
+            (for cube-pos = (rc-to-cube next-pos next-rotation face-size))
+            (for next-square = (gethash (gethash cube-pos cube) map))
+            (unless (eq next-square :wall)
+              (setf pos next-pos)
+              (setf rotation next-rotation)))
           (setf dir (turn dir instr)))
       (finally
        (return (password (gethash (rc-to-cube pos rotation face-size) cube)
