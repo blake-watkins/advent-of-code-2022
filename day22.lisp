@@ -27,10 +27,6 @@
                        (length *direction-info*))))
     (first (elt *direction-info* new-idx))))
 
-(defun direction-from (source target)
-  (let ((diff (point- target source)))
-    (first (find diff *direction-info* :test 'equal :key #'second))))
-
 (defun direction-offset (dir)
   (second (find dir *direction-info* :key #'first)))
 
@@ -67,17 +63,18 @@
 ;; net. As the search moves from tile to tile, "roll" the cube in the appropriate
 ;; direction. Return a map of each of the tiles to the rotation of the cube
 ;; required to bring them to the base of the cube.
-(defun get-face-rotations (face-size current net face-rotations &key (parent nil))
+(defun get-face-rotations (face-size current net face-rotations
+                           &key (parent nil) (roll-dir nil))
   (setf (gethash current face-rotations)
-        (if parent
-            (roll (gethash parent face-rotations) (direction-from parent current))
-            '(1 0 0 0)))
+        (if roll-dir (roll (gethash parent face-rotations) roll-dir) '(1 0 0 0)))
   (iter
-    (for offset in '((1 0) (-1 0) (0 1) (0 -1)))
+    (for (dir offset) in *direction-info*)
     (for neighbour = (point+ current offset))
     (when (and (valid-face-corners (point* face-size neighbour) face-size net)
                (or (null parent) (not (equal parent neighbour))))
-      (get-face-rotations face-size neighbour net face-rotations :parent current))
+      (get-face-rotations face-size neighbour net face-rotations
+                          :parent current
+                          :roll-dir dir))
     (finally (return face-rotations))))
 
 ;; Given an rc position on the base of the cube and the cube's rotation, return
@@ -149,33 +146,34 @@
      (* 4 (1+ (second pos)))
      (ecase dir (:right 0) (:down 1) (:left 2) (:up 3))))
 
+(defun traverse (net path)
+  (iter
+    (with (face-size first-face) = (get-first-face net))
+    (with face-rotations = (get-face-rotations face-size first-face net
+                                               (make-hash-table :test 'equal)))
+    (with origins = (get-face-origins face-size face-rotations))
+    (with cube = (get-cube face-size face-rotations net))
+    (with rotation = '(1 0 0 0))
+    (with pos = '(0 0))
+    (with dir = :right)
+    (for instr in path)
+    (if (numberp instr)
+        (iter
+          (repeat instr)
+          (for (next-pos next-rotation) =
+               (next-square-in-direction pos dir face-size rotation))
+          (for cube-pos = (rc-to-cube next-pos next-rotation face-size))
+          (for next-square = (gethash (gethash cube-pos cube) net))
+          (until (eq next-square :wall))
+          (setf pos next-pos)
+          (setf rotation next-rotation))
+        (setf dir (turn dir instr)))
+    (finally
+     (return (password (gethash (rc-to-cube pos rotation face-size) cube)
+                       (find-original-dir dir rotation origins face-size))))))
+
 (defun day22 (input)
   (let ((parsed (run-parser (one-or-more (parse-until (parse-file))) input)))
     (iter
       (for (net path) in parsed)
-      (collect
-          (iter
-            (with (face-size first-face) = (get-first-face net))
-            (with face-rotations =
-                  (get-face-rotations face-size first-face net
-                                      (make-hash-table :test 'equal)))
-            (with origins = (get-face-origins face-size face-rotations))
-            (with cube = (get-cube face-size face-rotations net))
-            (with rotation = '(1 0 0 0))
-            (with pos = '(0 0))
-            (with dir = :right)
-            (for instr in path)
-            (if (numberp instr)
-                (iter
-                  (repeat instr)
-                  (for (next-pos next-rotation) =
-                       (next-square-in-direction pos dir face-size rotation))
-                  (for cube-pos = (rc-to-cube next-pos next-rotation face-size))
-                  (for next-square = (gethash (gethash cube-pos cube) net))
-                  (until (eq next-square :wall))
-                  (setf pos next-pos)
-                  (setf rotation next-rotation))
-                (setf dir (turn dir instr)))
-            (finally
-             (return (password (gethash (rc-to-cube pos rotation face-size) cube)
-                               (find-original-dir dir rotation origins face-size)))))))))
+      (collect (traverse net path)))))
