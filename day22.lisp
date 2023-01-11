@@ -65,18 +65,18 @@
 (defun get-face-frames (face-size current net
                         &key (face-frames (make-hash-table :test 'equal))
                              (prev nil)
-                             (frame *reference-frame*))
-  (setf (gethash current face-frames) frame)
+                             (current-frame *reference-frame*))
+  (setf (gethash current face-frames) current-frame)
   (iter
     (for dir in '(:up :down :left :right))
     (for neighbour = (point+ current (direction-offset dir)))
     (when (and (valid-face-corners (point* face-size neighbour) face-size net)
                (or (null prev) (not (equal prev neighbour))))
-      (for neighbour-frame = (turn frame dir :in-frame *down-frame*))
+      (for neighbour-frame = (turn current-frame dir :in-frame *down-frame*))
       (get-face-frames face-size neighbour net
                        :face-frames face-frames
                        :prev current
-                       :frame neighbour-frame))
+                       :current-frame neighbour-frame))
     (finally (return face-frames))))
 
 (defun rc-to-cube (rc frame face-size)
