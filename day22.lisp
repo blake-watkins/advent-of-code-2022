@@ -62,8 +62,10 @@
                    (q-compose in-frame (q-compose rotor (q-reciprocal in-frame)))
                    rotor))))
 
-(defun get-face-frames (face-size current net face-frames
-                              &key (prev nil) (frame *reference-frame*))
+(defun get-face-frames (face-size current net
+                        &key (face-frames (make-hash-table :test 'equal))
+                             (prev nil)
+                             (frame *reference-frame*))
   (setf (gethash current face-frames) frame)
   (iter
     (for dir in '(:up :down :left :right))
@@ -71,9 +73,10 @@
     (when (and (valid-face-corners (point* face-size neighbour) face-size net)
                (or (null prev) (not (equal prev neighbour))))
       (for neighbour-frame = (turn frame dir :in-frame *down-frame*))
-      (get-face-frames face-size neighbour net face-frames
-                             :prev current
-                             :frame neighbour-frame))
+      (get-face-frames face-size neighbour net
+                       :face-frames face-frames
+                       :prev current
+                       :frame neighbour-frame))
     (finally (return face-frames))))
 
 (defun rc-to-cube (rc frame face-size)
@@ -116,8 +119,7 @@
 (defun traverse (net path)
   (iter
     (with (face-size first-face) = (get-first-face net))
-    (with face-frames = (get-face-frames face-size first-face net
-                                         (make-hash-table :test 'equal)))
+    (with face-frames = (get-face-frames face-size first-face net))
     (with cube = (get-cube face-size face-frames net))
     (with position = (rc-to-cube '(0 0) *reference-frame* face-size))
     (with frame = *reference-frame*)
