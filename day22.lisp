@@ -14,22 +14,23 @@
     (assign path (parse-until (parse-path)))
     (unit (list (hash-table-from-list-list net) path))))
 
-;; for each direction, store its (r c) offset and a rotor to roll in that direction
+;; for each direction, store its (r c) offset
 (defparameter *direction-info*
-  `((:right ( 0  1) ,(q-rotor (/ pi 2) '( 0  1 0)))
-    (:down  ( 1  0) ,(q-rotor (/ pi 2) '( 1  0 0)))
-    (:left  ( 0 -1) ,(q-rotor (/ pi 2) '( 0 -1 0)))
-    (:up    (-1  0) ,(q-rotor (/ pi 2) '(-1  0 0)))))
+  '((:right (0 1)) (:down (1 0)) (:left (0 -1)) (:up (-1 0))))
 
 (defun turn (orientation direction)
-  (q-compose orientation (q-rotor (/ pi 2) (ecase direction
-                                             (:r '(0 0 1))
-                                             (:l '(0 0 -1))
-                                             (:up '(0 -1 0))
-                                             (:down '(0 1 0))))))
-
-(defun roll (rotor direction)
-  (q-compose (third (find direction *direction-info* :key #'first)) rotor))
+  (labels ((turn-int (orientation direction)
+             (let ((axis (ecase direction
+                           ((:r :yaw-right) '(0 0 -1))
+                           ((:l :yaw-left) '(0 0 1))
+                           (:pitch-up '(0 -1 0))
+                           (:pitch-down '(0 1 0))
+                           (:roll-cw '(1 0 0))
+                           (:roll-ccw '(-1 0 0)))))
+               (q-compose orientation (q-rotor (/ pi 2) axis)))))
+    (reduce #'turn-int
+            (if (listp direction) direction (list direction))
+            :initial-value orientation)))
 
 ;; Checks that the four corners of the square with top-left coordinate POS and of
 ;; size SIZE exist in the net and that they're not blank.
@@ -55,57 +56,54 @@
        (list face-size (list 0 (floor col face-size)))
        such-that (not (valid-face-corners (list 0 col) (1+ face-size) net))))))
 
-;; Starting from the first tile in the net, recursively find all tiles in the
-;; net. As the search moves from tile to tile, "roll" the cube in the appropriate
-;; direction. Return a map of each of the tiles to the rotation of the cube
-;; required to bring them to the base of the cube.
-(defun get-face-rotations (face-size current net face-rotations
-                           &key (parent nil) (roll-dir nil))
-  (setf (gethash current face-rotations)
-        (if roll-dir (roll (gethash parent face-rotations) roll-dir) '(1 0 0 0)))
+(defun get-face-orientations (face-size current net face-orientations
+                              &key (prev nil) (dir nil))
+  (setf (gethash current face-orientations)
+        (if dir
+            (turn (gethash prev face-orientations)
+                  (ecase dir
+                    (:right :pitch-up)
+                    (:left :pitch-down)
+                    (:up :roll-cw)
+                    (:down :roll-ccw)))
+            '(1 0 0 0)))
   (iter
     (for (dir offset) in *direction-info*)
     (for neighbour = (point+ current offset))
     (when (and (valid-face-corners (point* face-size neighbour) face-size net)
-               (or (null parent) (not (equal parent neighbour))))
-      (get-face-rotations face-size neighbour net face-rotations
-                          :parent current
-                          :roll-dir dir))
-    (finally (return face-rotations))))
+               (or (null prev) (not (equal prev neighbour))))
+      (get-face-orientations face-size neighbour net face-orientations
+                            :prev current
+                            :dir dir))
+    (finally (return face-orientations))))
 
-;; Given an rc position on the base of the cube and the cube's rotation, return
-;; the cube coordinate that maps to that position under that rotation.
-;; Steps: (1) Convert the rc position to xyz position 
-;;        (2) Center the cube to the origin by subtracting the cube center
-;;        (3) Apply the reciprocal rotation to find where this coordinate came from
-;;        (4) Move the cube back by adding the center
-;;        (5) Round the coordinates back to integers to fix floating point errors
-(defun rc-to-cube (rc rotation face-size)
+(defun rc-to-cube (rc face-orientation face-size)
   (let* ((half-length (/ (1- face-size) 2))
          (center (list half-length half-length (1+ half-length))))
     (destructuring-bind (r c) rc
       (q-round (point+ (q-rotate-vector
                         (point- (list c (- face-size r 1) 0) center)
-                        (q-reciprocal rotation))
+                        face-orientation)
                        center)))))
 
 ;; Return a map of each cube position to the corresponding rc position in the net
-(defun get-cube (face-size face-rotations net)
+(defun get-cube (face-size face-orientations net)
   (iter
     (with cube = (make-hash-table :test 'equal))
     (for (pos square) in-hashtable net)
     (when (or (eq square :open) (eq square :wall))
       (for tile = (mapcar (lambda (x) (floor x face-size)) pos))
       (for rc = (mapcar (lambda (x) (mod x face-size)) pos))
-      (for rotation = (gethash tile face-rotations))
-      (for cube-pos = (rc-to-cube rc rotation face-size))
+      (for orientation = (gethash tile face-orientations))
+      (for cube-pos = (rc-to-cube rc orientation face-size))
       (setf (gethash cube-pos cube) pos))
     (finally (return cube))))
 
-(defun find-original-dir (dir orig-pos face-size face-rotations)
+(defun find-original-dir (dir orig-pos face-size face-orientations)
   (let* ((face-tile (mapcar (lambda (x) (floor x face-size)) orig-pos))
-         (face-rotation (gethash face-tile face-rotations))
-         (orig-dir (q-round (q-rotate-vector dir face-rotation))))
+         (face-orientation (gethash face-tile face-orientations))
+         (orig-dir
+           (q-round (q-rotate-vector dir (q-reciprocal face-orientation)))))
     (destructuring-bind (x y) (subseq orig-dir 0 2)
       (first (find (list (- y) x) *direction-info* :key #'second :test 'equal)))))
 
@@ -121,18 +119,18 @@
   (let ((next-position (point+ position (forward-vector orientation))))
     (if (gethash next-position cube)
         (list next-position orientation)
-        (let ((next-orientation (turn orientation :down)))
+        (let ((next-orientation (turn orientation :pitch-up)))
           (list (point+ next-position (forward-vector next-orientation))
                 next-orientation)))))
 
 (defun traverse (net path)
   (iter
     (with (face-size first-face) = (get-first-face net))
-    (with face-rotations = (get-face-rotations face-size first-face net
-                                               (make-hash-table :test 'equal)))
-    (with cube = (get-cube face-size face-rotations net))
+    (with face-orientations = (get-face-orientations face-size first-face net
+                                                  (make-hash-table :test 'equal)))
+    (with cube = (get-cube face-size face-orientations net))
     (with position = (rc-to-cube '(0 0) '(1 0 0 0) face-size))
-    (with orientation = (roll (roll '(1 0 0 0) :down) :down))
+    (with orientation = '(1 0 0 0))
     (for instruction in path)
 ;;    (break)
     (if (numberp instruction)
@@ -141,6 +139,7 @@
           (for (next-position next-orientation) =
                (next-position position orientation cube))
           (for next-square = (gethash (gethash next-position cube) net))
+;;          (break)
           (until (eq next-square :wall))
           (setf position next-position)
           (setf orientation next-orientation))
@@ -150,7 +149,7 @@
                        (find-original-dir (forward-vector orientation)
                                           (gethash position cube)
                                           face-size
-                                          face-rotations))))))
+                                          face-orientations))))))
 
 (defun day22 (input)
   (let ((parsed (run-parser (one-or-more (parse-until (parse-file))) input)))
