@@ -39,45 +39,22 @@
        such-that (not (valid-face-corners (list 0 col) (1+ face-size) net))))))
 
 (defparameter *direction-info*
-  '((:right . ((0  1) 0 (0 0 -1))) (:down . (( 1 0) 1 (0  1 0)))
-    (:left .  ((0 -1) 2 (0 0  1))) (:up .   ((-1 0) 3 (0 -1 0)))
-    (:cw . (nil nil (1 0 0))) (:ccw . (nil nil (-1 0 0)))))
+    '((:right . ((0  1) 0 (0 0 -1))) (:down . (( 1 0) 1 (0  1 0)))
+      (:left .  ((0 -1) 2 (0 0  1))) (:up .   ((-1 0) 3 (0 -1 0)))
+      (:cw . (nil nil (1 0 0))) (:ccw . (nil nil (-1 0 0)))))
 
-(defun offset-direction (offset)
-  (car (rassoc offset *direction-info* :test 'equal :key #'first)))
 (defun direction-offset (dir) (cadr (assoc dir *direction-info*)))
 (defun direction-score (dir) (caddr (assoc dir *direction-info*)))
 (defun direction-axis (dir) (cadddr (assoc dir *direction-info*)))
-
-(defparameter *reference-frame* '(1 0 0 0))
-(defparameter *down-frame* (turn (turn *reference-frame* :down) :ccw))
+(defun offset-direction (offset)
+  (car (rassoc offset *direction-info* :test 'equal :key #'first)))
 
 (defun forward-vector (frame)
   (q-round (q-rotate-vector '(1 0 0) frame)))
 
 (defun turn (frame direction &key in-frame)
   (let ((rotor (q-rotor (/ pi 2) (direction-axis direction))))
-    (q-compose frame
-               (if in-frame
-                   (q-compose in-frame (q-compose rotor (q-reciprocal in-frame)))
-                   rotor))))
-
-(defun get-face-frames (face-size current net
-                        &key (face-frames (make-hash-table :test 'equal))
-                             (prev nil)
-                             (current-frame *reference-frame*))
-  (setf (gethash current face-frames) current-frame)
-  (iter
-    (for dir in '(:up :down :left :right))
-    (for neighbour = (point+ current (direction-offset dir)))
-    (when (and (valid-face-corners (point* face-size neighbour) face-size net)
-               (or (null prev) (not (equal prev neighbour))))
-      (for neighbour-frame = (turn current-frame dir :in-frame *down-frame*))
-      (get-face-frames face-size neighbour net
-                       :face-frames face-frames
-                       :prev current
-                       :current-frame neighbour-frame))
-    (finally (return face-frames))))
+    (q-compose frame (if in-frame (q-conjugate-by rotor in-frame) rotor))))
 
 (defun rc-to-cube (rc frame face-size)
   (destructuring-bind (r c) rc
@@ -86,6 +63,26 @@
            (xyz (list c (- face-size r 1) 0)))
       (q-round
        (point+ (q-rotate-vector (point- xyz center) frame) center)))))
+
+(defparameter *reference-frame* '(1 0 0 0))
+(defparameter *down-frame* (turn (turn *reference-frame* :down) :ccw))
+
+(defun get-face-frames (face-size current net
+                        &key (face-frames (make-hash-table :test 'equal))
+                             (prev nil)
+                             (current-frame *reference-frame*))
+  (setf (gethash current face-frames) current-frame)
+  (iter
+    (for direction in '(:up :down :left :right))
+    (for neighbour = (point+ current (direction-offset direction)))
+    (when (and (valid-face-corners (point* face-size neighbour) face-size net)
+               (or (null prev) (not (equal prev neighbour))))
+      (for neighbour-frame = (turn current-frame direction :in-frame *down-frame*))
+      (get-face-frames face-size neighbour net
+                       :face-frames face-frames
+                       :prev current
+                       :current-frame neighbour-frame))
+    (finally (return face-frames))))
 
 (defun get-cube (face-size face-frames net)
   (iter
@@ -106,12 +103,10 @@
         (let ((next-frame (turn frame :up)))
           (list (point+ next-position (forward-vector next-frame)) next-frame)))))
 
-(defun find-net-dir (frame net-pos face-size face-frames)
-  (let* ((face-tile (mapcar (lambda (x) (floor x face-size)) net-pos))
-         (face-frame (gethash face-tile face-frames))
-         (dir-xyz (forward-vector (q-compose (q-reciprocal face-frame) frame))))
-    (destructuring-bind (x y) (subseq dir-xyz 0 2)
-      (offset-direction (list (- y) x)))))
+(defun find-net-direction (frame face-frame)
+  (destructuring-bind (x y)
+      (subseq (forward-vector (q-compose (q-reciprocal face-frame) frame)) 0 2)
+    (offset-direction (list (- y) x))))
 
 (defun password (pos dir)
   (+ (* 1000 (1+ (first pos))) (* 4 (1+ (second pos))) (direction-score dir)))
@@ -123,20 +118,22 @@
     (with cube = (get-cube face-size face-frames net))
     (with position = (rc-to-cube '(0 0) *reference-frame* face-size))
     (with frame = *reference-frame*)
-    (for instruction in path)
-    (if (numberp instruction)
+    (for steps-or-direction in path)
+    (if (numberp steps-or-direction)
         (iter
-          (repeat instruction)
+          (repeat steps-or-direction)
           (for (next-position next-frame) = (next-position position frame cube))
           (for next-square = (gethash (gethash next-position cube) net))
           (until (eq next-square :wall))
           (setf position next-position)
           (setf frame next-frame))
-        (setf frame (turn frame instruction)))
+        (setf frame (turn frame steps-or-direction)))
     (finally
-     (let* ((net-pos (gethash position cube))
-            (net-dir (find-original-dir frame net-pos face-size face-frames)))
-       (return (password net-pos net-dir))))))
+     (let* ((net-position (gethash position cube))
+            (face-tile (mapcar (lambda (x) (floor x face-size)) net-position))
+            (face-frame (gethash face-tile face-frames))
+            (net-direction (find-net-direction frame face-frame)))
+       (return (password net-position net-direction))))))
 
 (defun day22 (input)
   (let ((parsed (run-parser (one-or-more (parse-until (parse-file))) input)))
