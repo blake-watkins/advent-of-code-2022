@@ -101,15 +101,13 @@
     (if (gethash next-position cube)
         (list next-position frame)
         (let ((next-frame (turn frame :up)))
-          (list (point+ next-position (forward-vector next-frame))
-                next-frame)))))
+          (list (point+ next-position (forward-vector next-frame)) next-frame)))))
 
-(defun find-original-dir (frame orig-pos face-size face-frames)
-  (let* ((face-tile (mapcar (lambda (x) (floor x face-size)) orig-pos))
+(defun find-net-dir (frame net-pos face-size face-frames)
+  (let* ((face-tile (mapcar (lambda (x) (floor x face-size)) net-pos))
          (face-frame (gethash face-tile face-frames))
-         (orig-dir (forward-vector (q-compose (q-reciprocal face-frame)
-                                              frame))))
-    (destructuring-bind (x y) (subseq orig-dir 0 2)
+         (dir-xyz (forward-vector (q-compose (q-reciprocal face-frame) frame))))
+    (destructuring-bind (x y) (subseq dir-xyz 0 2)
       (offset-direction (list (- y) x)))))
 
 (defun password (pos dir)
@@ -119,29 +117,24 @@
   (iter
     (with (face-size first-face) = (get-first-face net))
     (with face-frames = (get-face-frames face-size first-face net
-                                                  (make-hash-table :test 'equal)))
+                                         (make-hash-table :test 'equal)))
     (with cube = (get-cube face-size face-frames net))
     (with position = (rc-to-cube '(0 0) *reference-frame* face-size))
     (with frame = *reference-frame*)
     (for instruction in path)
-;;    (break)
     (if (numberp instruction)
         (iter
           (repeat instruction)
-          (for (next-position next-frame) =
-               (next-position position frame cube))
+          (for (next-position next-frame) = (next-position position frame cube))
           (for next-square = (gethash (gethash next-position cube) net))
-;;          (break)
           (until (eq next-square :wall))
           (setf position next-position)
           (setf frame next-frame))
         (setf frame (turn frame instruction)))
     (finally
-     (return (password (gethash position cube)
-                       (find-original-dir frame
-                                          (gethash position cube)
-                                          face-size
-                                          face-frames))))))
+     (let* ((net-pos (gethash position cube))
+            (net-dir (find-original-dir frame net-pos face-size face-frames)))
+       (return (password net-pos net-dir))))))
 
 (defun day22 (input)
   (let ((parsed (run-parser (one-or-more (parse-until (parse-file))) input)))
