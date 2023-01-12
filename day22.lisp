@@ -38,10 +38,13 @@
        (list face-size (list 0 (floor col face-size)))
        such-that (not (valid-face-corners (list 0 col) (1+ face-size) net))))))
 
+(defparameter *reference-frame* '(1 0 0 0))
+(defparameter *reference-frame-forward* '(0 0 -1))
+
 (defparameter *direction-info*
-    '((:right . ((0  1) 0 (0 0 -1))) (:down . (( 1 0) 1 (0  1 0)))
-      (:left .  ((0 -1) 2 (0 0  1))) (:up .   ((-1 0) 3 (0 -1 0)))
-      (:cw . (nil nil (1 0 0))) (:ccw . (nil nil (-1 0 0)))))
+    '((:right . ((0  1) 0 (0 -1 0))) (:down . (( 1 0) 1 (-1  0 0)))
+      (:left .  ((0 -1) 2 (0  1 0))) (:up .   ((-1 0) 3 ( 1 0 0)))
+      (:cw . (nil nil (0 0 -1))) (:ccw . (nil nil (0 0 1)))))
 
 (defun direction-offset (dir) (cadr (assoc dir *direction-info*)))
 (defun direction-score (dir) (caddr (assoc dir *direction-info*)))
@@ -49,12 +52,11 @@
 (defun offset-direction (offset)
   (car (rassoc offset *direction-info* :test 'equal :key #'first)))
 
-(defun forward-vector (frame)
-  (q-round (q-rotate-vector '(1 0 0) frame)))
+(defun turn (frame direction)
+  (q-compose frame (q-rotor (/ pi 2) (direction-axis direction))))
 
-(defun turn (frame direction &key in-frame)
-  (let ((rotor (q-rotor (/ pi 2) (direction-axis direction))))
-    (q-compose frame (if in-frame (q-conjugate-by rotor in-frame) rotor))))
+(defun frame-forward (frame)
+  (q-round (q-rotate-vector *reference-frame-forward* frame)))
 
 (defun rc-to-cube (rc frame face-size)
   (destructuring-bind (r c) rc
@@ -63,9 +65,6 @@
            (xyz (list c (- face-size r 1) 0)))
       (q-round
        (point+ (q-rotate-vector (point- xyz center) frame) center)))))
-
-(defparameter *reference-frame* '(1 0 0 0))
-(defparameter *down-frame* (turn (turn *reference-frame* :down) :ccw))
 
 (defun get-face-frames (face-size current net
                         &key (face-frames (make-hash-table :test 'equal))
@@ -77,7 +76,7 @@
     (for neighbour = (point+ current (direction-offset direction)))
     (when (and (valid-face-corners (point* face-size neighbour) face-size net)
                (or (null prev) (not (equal prev neighbour))))
-      (for neighbour-frame = (turn current-frame direction :in-frame *down-frame*))
+      (for neighbour-frame = (turn current-frame direction))
       (get-face-frames face-size neighbour net
                        :face-frames face-frames
                        :prev current
@@ -97,15 +96,15 @@
     (finally (return cube))))
 
 (defun next-position (position frame cube)
-  (let ((next-position (point+ position (forward-vector frame))))
+  (let ((next-position (point+ position (frame-forward frame))))
     (if (gethash next-position cube)
         (list next-position frame)
         (let ((next-frame (turn frame :up)))
-          (list (point+ next-position (forward-vector next-frame)) next-frame)))))
+          (list (point+ next-position (frame-forward next-frame)) next-frame)))))
 
 (defun find-net-direction (frame face-frame)
   (destructuring-bind (x y)
-      (subseq (forward-vector (q-compose (q-reciprocal face-frame) frame)) 0 2)
+      (subseq (frame-forward (q-compose (q-reciprocal face-frame) frame)) 0 2)
     (offset-direction (list (- y) x))))
 
 (defun password (pos dir)
@@ -117,7 +116,7 @@
     (with face-frames = (get-face-frames face-size first-face net))
     (with cube = (get-cube face-size face-frames net))
     (with position = (rc-to-cube '(0 0) *reference-frame* face-size))
-    (with frame = *reference-frame*)
+    (with frame = (turn (turn *reference-frame* :right) :cw))
     (for steps-or-direction in path)
     (if (numberp steps-or-direction)
         (iter
