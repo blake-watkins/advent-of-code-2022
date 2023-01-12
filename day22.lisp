@@ -42,9 +42,9 @@
 (defparameter *reference-frame-forward* '(0 0 -1))
 
 (defparameter *direction-info*
-    '((:right . ((0  1) 0 (0 -1 0))) (:down . (( 1 0) 1 (-1  0 0)))
-      (:left .  ((0 -1) 2 (0  1 0))) (:up .   ((-1 0) 3 ( 1 0 0)))
-      (:cw . (nil nil (0 0 -1))) (:ccw . (nil nil (0 0 1)))))
+    '((:right (0  1) 0 (0 -1 0)) (:down ( 1 0) 1 (-1 0 0))
+      (:left  (0 -1) 2 (0  1 0)) (:up   (-1 0) 3 ( 1 0 0))
+      (:cw nil nil (0 0 -1)) (:ccw nil nil (0 0 1))))
 
 (defun direction-offset (dir) (cadr (assoc dir *direction-info*)))
 (defun direction-score (dir) (caddr (assoc dir *direction-info*)))
