@@ -64,13 +64,20 @@
 (defun offset-direction (offset)
   (car (rassoc offset *direction-info* :test 'equal :key #'first)))
 
+(defun frame-forward (frame)
+  "Return the forward vector in FRAME."
+  (q-round (q-rotate-vector *reference-frame-forward* frame)))
+
 (defun turn (frame direction)
   "Return a frame turned 90 degrees in DIRECTION from FRAME."
   (q-compose frame (q-rotor (/ pi 2) (direction-axis direction))))
 
-(defun frame-forward (frame)
-  "Return the forward vector in FRAME."
-  (q-round (q-rotate-vector *reference-frame-forward* frame)))
+(defun net-direction (frame face-frame)
+  "Return the direction of the forward vector in FRAME from the perspective of the face in the original net."
+  (destructuring-bind (x y z)
+      (q-round (q-rotate-vector (frame-forward frame) (q-reciprocal face-frame)))
+    (declare (ignore z))
+    (offset-direction (list (- y) x))))
 
 ;; In the reference frame, the RC coordinates of the net map to a square in the
 ;; xy plane. For a face size of 4, the (0,0) rc point maps to (0,3,0) xyz and the
@@ -83,8 +90,7 @@
     (let* ((half-length (/ (1- face-size) 2))
            (center (list half-length half-length (1+ half-length)))
            (xyz (list c (- face-size r 1) 0)))
-      (q-round
-       (point+ (q-rotate-vector (point- xyz center) frame) center)))))
+      (q-round (point+ (q-rotate-vector (point- xyz center) frame) center)))))
 
 ;; Recursively search from the first face returning a hash table of all faces
 ;; and the frame that points to them. As we move from face to face on the net,
@@ -106,8 +112,8 @@
                        :current-frame neighbour-frame))
     (finally (return face-frames))))
 
-;; Return a hash table mapping each occupied 3d position to the rc coordinate of
-;; the net that it maps to.
+;; Return a hash table mapping each occupied 3d position to its rc coordinate in
+;; the net.
 (defun get-cube (face-size face-frames net)
   (iter
     (with cube = (make-hash-table :test 'equal))
@@ -121,33 +127,78 @@
     (finally (return cube))))
 
 ;; Takes a 3d POSITION, FRAME, and CUBE. Tries to move forward but if we
-;; get to the edge of the cube, turns up and moves forward onto the next side.
-;; Movement is as if we were crawling around inside the cube. Directions are
-;; relative to FRAME. Return the new position and frame.
+;; get to the edge of the cube, turns up then tries to move forward onto the next ;; side. If there isn't one, keep turning down and attempting again.
+;; Handles moving around both closed and open lidded boxes. 
 (defun next-position (position frame cube)
-  (let ((next-position (point+ position (frame-forward frame))))
-    (if (gethash next-position cube)
-        (list next-position frame)
-        (let ((next-frame (turn frame :up)))
-          (list (point+ next-position (frame-forward next-frame)) next-frame)))))
+  (let ((test-position (point+ position (frame-forward frame))))
+    (if (gethash test-position cube)
+        (list test-position frame)
+	(iter
+	  (for next-frame first (turn frame :up) then (turn next-frame :down))
+	  (for next-position = (point+ test-position (frame-forward next-frame)))
+	  (finding (list next-position next-frame)
+		   such-that (gethash next-position cube))))))
 
-;; Given the current FRAME, and the frame for the face as it is on the net, return
-;; the direction that we are travelling from the perspective of the original net.
-(defun find-net-direction (frame face-frame)
-  (destructuring-bind (x y)
-      (subseq (frame-forward (q-compose (q-reciprocal face-frame) frame)) 0 2)
-    (offset-direction (list (- y) x))))
+;; Return the position and direction from the perspective of the original net
+(defun net-coordinates (position frame cube face-size face-frames)
+  (let* ((net-position (gethash position cube))
+         (face-tile (mapcar (lambda (x) (floor x face-size)) net-position))
+         (face-frame (gethash face-tile face-frames)))
+    (list net-position (net-direction frame face-frame))))
 
-(defun password (pos dir)
-  (+ (* 1000 (1+ (first pos))) (* 4 (1+ (second pos))) (direction-score dir)))
+(defun start-position-and-frame (face-size)
+  (list (rc-to-cube '(0 0) *reference-frame* face-size) *reference-frame*))
 
-(defun traverse (net path)
+;; Find the top-right face, which will be the lid. Find the direction it joins in.
+;; Move all the points on the lid to their proper places. Change the frame of the
+;; lid in the face-frames hash table. If we would have originally started on the
+;; lid, return the new start position, otherwise return the original start pos.
+(defun open-lid (face-frames cube face-size)
+  (labels ((topmost-rightmost (a b)
+	     (if (or (null a)
+		     (< (first b) (first a))
+		     (and (= (first b) (first a)) (> (second b) (second a))))
+		 b a)))
+    (iter
+      (with lid = (iter
+		    (for (face nil) in-hashtable face-frames)
+		    (reducing face by #'topmost-rightmost)))
+      (with lid-frame = (gethash lid face-frames))
+      (with (join-direction join-frame) =
+	    (iter
+	      (for dir in '(:left :down))
+	      (for neighbour = (point+ lid (direction-offset dir)))
+	      (for frame = (gethash neighbour face-frames))
+	      (finding (list dir frame) such-that frame)))
+      (with join-offset =
+	    (point* (- (1+ face-size)) (direction-offset join-direction)))
+
+      (for r below face-size)
+      (iter
+	(for c below face-size)
+	(for closed-pos = (rc-to-cube (list r c) lid-frame face-size))
+	(for opened-pos =
+	     (rc-to-cube (point+ (list r c) join-offset) join-frame face-size))
+	(setf (gethash opened-pos cube) (gethash closed-pos cube))
+	(remhash closed-pos cube))
+
+      (finally
+       (setf (gethash lid face-frames) join-frame)
+       (return (if (equal lid-frame *reference-frame*)
+		   (list (rc-to-cube join-offset join-frame face-size) join-frame)
+		   (start-position-and-frame face-size)))))))
+
+(defun traverse (net path &key open-lid)
   (iter
     (with (face-size first-face) = (get-first-face net))
     (with face-frames = (get-face-frames face-size first-face net))
     (with cube = (get-cube face-size face-frames net))
-    (with position = (rc-to-cube '(0 0) *reference-frame* face-size))
-    (with frame = (turn (turn *reference-frame* :right) :cw))
+    (with (position frame) =
+	  (if open-lid
+	      (open-lid face-frames cube face-size)
+	      (start-position-and-frame face-size)))
+    (initially (setf frame (turn (turn frame :right) :cw)))
+
     (for steps-or-direction in path)
     (if (numberp steps-or-direction)
         (iter
@@ -159,14 +210,13 @@
           (setf frame next-frame))
         (setf frame (turn frame steps-or-direction)))
     (finally
-     (let* ((net-position (gethash position cube))
-            (face-tile (mapcar (lambda (x) (floor x face-size)) net-position))
-            (face-frame (gethash face-tile face-frames))
-            (net-direction (find-net-direction frame face-frame)))
-       (return (password net-position net-direction))))))
+     (return (net-coordinates position frame cube face-size  face-frames)))))
 
-(defun day22 (input)
+(defun password (pos dir)
+  (+ (* 1000 (1+ (first pos))) (* 4 (1+ (second pos))) (direction-score dir)))
+
+(defun day22 (input &key (open-lid nil))
   (let ((parsed (run-parser (one-or-more (parse-until (parse-file))) input)))
     (iter
       (for (net path) in parsed)
-      (sum (traverse net path)))))
+      (sum (apply #'password (traverse net path :open-lid open-lid))))))
