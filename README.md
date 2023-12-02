@@ -11,3 +11,8 @@
 
 ### Running problems
 Generally running `(dayN (get-problem N YEAR) :part P)` will get the answer, where N is the day and P is 1 or 2. Some days are different though. 
+
+## Other years' repositories
+
+* [2021](https://github.com/blake-watkins/advent-of-code-2021)
+* [2023](https://github.com/blake-watkins/advent-of-code-2023)
